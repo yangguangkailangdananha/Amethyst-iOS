@@ -128,8 +128,12 @@ static void *ProgressObserverContext = &ProgressObserverContext;
 
     [self fetchRemoteVersionList];
     [NSNotificationCenter.defaultCenter addObserver:self
-        selector:@selector(receiveNotification:) 
+        selector:@selector(receiveNotification:)
         name:@"InstallModpack"
+        object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self
+        selector:@selector(receiveNotification:)
+        name:@"InstallMod"
         object:nil];
 
     if ([BaseAuthenticator.current isKindOfClass:MicrosoftAuthenticator.class]) {
@@ -396,7 +400,9 @@ static void *ProgressObserverContext = &ProgressObserverContext;
 }
 
 - (void)receiveNotification:(NSNotification *)notification {
-    if (![notification.name isEqualToString:@"InstallModpack"]) {
+    BOOL installsModpack = [notification.name isEqualToString:@"InstallModpack"];
+    BOOL installsMod = [notification.name isEqualToString:@"InstallMod"];
+    if (!installsModpack && !installsMod) {
         return;
     }
     [self setInteractionEnabled:NO forDownloading:YES];
@@ -411,7 +417,11 @@ static void *ProgressObserverContext = &ProgressObserverContext;
                 weakSelf.progressVC = nil;
             });
         };
-        [self.task downloadModpackFromAPI:notification.object detail:userInfo[@"detail"] atIndex:[userInfo[@"index"] unsignedLongValue]];
+        if (installsModpack) {
+            [self.task downloadModpackFromAPI:notification.object detail:userInfo[@"detail"] atIndex:[userInfo[@"index"] unsignedLongValue]];
+        } else {
+            [self.task downloadModFromAPI:notification.object detail:userInfo[@"detail"] atIndex:[userInfo[@"index"] unsignedLongValue]];
+        }
         dispatch_async(dispatch_get_main_queue(), ^{
             self.progressViewMain.observedProgress = self.task.progress;
             [self.task.progress addObserver:self

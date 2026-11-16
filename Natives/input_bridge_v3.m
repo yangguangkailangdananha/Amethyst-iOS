@@ -21,6 +21,7 @@
 #include "jni.h"
 #include "glfw_keycodes.h"
 #include "ios_uikit_bridge.h"
+#include "SDLInputBridge.h"
 #include "utils.h"
 
 #include "JavaLauncher.h"
@@ -435,6 +436,7 @@ void CallbackBridge_nativeSetInputReady(BOOL inputReady) {
 }
 
 BOOL CallbackBridge_nativeSendChar(jchar codepoint /* jint codepoint */) {
+    if (AMESDLSendChar(codepoint)) return YES;
     if (GLFW_invoke_Char && isInputReady) {
         if (isUseStackQueueCall) {
             sendData(EVENT_TYPE_CHAR, codepoint, 0, 0, 0);
@@ -448,6 +450,7 @@ BOOL CallbackBridge_nativeSendChar(jchar codepoint /* jint codepoint */) {
 }
 
 BOOL CallbackBridge_nativeSendCharMods(jchar codepoint, int mods) {
+    if (AMESDLSendChar(codepoint)) return YES;
     if (GLFW_invoke_CharMods && isInputReady) {
         if (isUseStackQueueCall) {
             sendData(EVENT_TYPE_CHAR_MODS, (unsigned int) codepoint, mods, 0, 0);
@@ -466,6 +469,7 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSendCursorEnter(
 }
 */
 void CallbackBridge_nativeSendCursorPos(char event, CGFloat x, CGFloat y) {
+    if (AMESDLSendCursorPos(event, x, y)) return;
     if (!GLFW_invoke_CursorPos || !isInputReady) return;
 
     switch (event) {
@@ -529,6 +533,14 @@ char getKeyModifiers(int key, int action) {
 }
 
 void CallbackBridge_nativeSendKey(int key, int scancode, int action, int mods) {
+    if (AMESDLSendKey(key, scancode, action, mods)) {
+        if (key == GLFW_KEY_LEFT_CONTROL) {
+            AMESDLSendKey(GLFW_KEY_LEFT_SUPER, 0, action, mods);
+        } else if (key == GLFW_KEY_RIGHT_CONTROL) {
+            AMESDLSendKey(GLFW_KEY_RIGHT_SUPER, 0, action, mods);
+        }
+        return;
+    }
     if (GLFW_invoke_Key && isInputReady) {
         keyDownBuffer[MAX(0, key-31)]=(jbyte)action;
         if (mods == 0) {
@@ -551,6 +563,7 @@ void CallbackBridge_nativeSendKey(int key, int scancode, int action, int mods) {
 }
 
 void CallbackBridge_nativeSendMouseButton(int button, int action, int mods) {
+    if (AMESDLSendMouseButton(button, action)) return;
     if (isInputReady) {
         if (button == -1) {
         } else if (GLFW_invoke_MouseButton) {
@@ -592,6 +605,7 @@ void CallbackBridge_nativeSendScreenSize(int width, int height) {
 }
 
 void CallbackBridge_nativeSendScroll(CGFloat xoffset, CGFloat yoffset) {
+    if (AMESDLSendScroll(xoffset, yoffset)) return;
     if (GLFW_invoke_Scroll && isInputReady) {
         if (isUseStackQueueCall) {
             sendDataFloat(EVENT_TYPE_SCROLL, xoffset, yoffset, 0, 0);

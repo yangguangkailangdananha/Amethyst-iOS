@@ -17,6 +17,7 @@
 #import "MinecraftResourceUtils.h"
 #import "PLProfiles.h"
 #import "SurfaceViewController.h"
+#import "SDLInputBridge.h"
 #import "TrackedTextField.h"
 #import "UIKit+hook.h"
 #import "ios_uikit_bridge.h"
@@ -31,6 +32,16 @@ int memorystatus_control(uint32_t command, int32_t pid, uint32_t flags, void *bu
 
 static int currentHotbarSlot = -1;
 static GameSurfaceView* pojavWindow;
+
+@interface AMESDLPassThroughView : UIView
+@end
+
+@implementation AMESDLPassThroughView
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *result = [super hitTest:point withEvent:event];
+    return result == self ? nil : result;
+}
+@end
 
 @interface SurfaceViewController ()<UITextFieldDelegate, UIGestureRecognizerDelegate> {
 }
@@ -62,6 +73,10 @@ static GameSurfaceView* pojavWindow;
 @end
 
 @implementation SurfaceViewController
+
+- (void)loadView {
+    self.view = [[AMESDLPassThroughView alloc] initWithFrame:UIScreen.mainScreen.bounds];
+}
 
 - (instancetype)initWithMetadata:(NSDictionary *)metadata {
     self = [super init];
@@ -108,7 +123,7 @@ static GameSurfaceView* pojavWindow;
 
     [self updateSavedResolution];
 
-    self.rootView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width + 30.0, self.view.frame.size.height)];
+    self.rootView = [[AMESDLPassThroughView alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width + 30.0, self.view.frame.size.height)];
     [self.view addSubview:self.rootView];
 
     self.ctrlView = [[ControlLayout alloc] initWithFrame:getSafeArea(self.view.frame)];
@@ -268,7 +283,25 @@ static GameSurfaceView* pojavWindow;
         [self switchToExternalDisplay];
     }
 
+    if ([self.metadata[@"amethystUsesSDL"] boolValue]) {
+        AMESDLRegisterSurfaceViewController(self);
+    }
     [self launchMinecraft];
+}
+
+- (void)attachSDLControlsToWindow:(UIWindow *)window {
+    UIView *container = window.rootViewController.view;
+    if (!container) return;
+
+    // SDL owns rendering and native input. Keep Amethyst's controls as a
+    // transparent overlay and hide only the obsolete GLFW surface.
+    self.touchView.hidden = YES;
+    [self.rootView addSubview:self.mousePointerView];
+    self.view.backgroundColor = UIColor.clearColor;
+    self.view.frame = container.bounds;
+    self.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [container addSubview:self.view];
+    [self updateControlHiddenState:self.toggleHidden];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -619,6 +652,10 @@ static GameSurfaceView* pojavWindow;
 }
 
 - (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    if ([self.metadata[@"amethystUsesSDL"] boolValue]) {
+        [super pressesBegan:presses withEvent:event];
+        return;
+    }
     BOOL handled = NO;
 
     for (UIPress *press in presses) {
@@ -634,6 +671,10 @@ static GameSurfaceView* pojavWindow;
 }
 
 - (void)pressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+    if ([self.metadata[@"amethystUsesSDL"] boolValue]) {
+        [super pressesEnded:presses withEvent:event];
+        return;
+    }
     BOOL handled = NO;
 
     for (UIPress *press in presses) {
@@ -653,6 +694,10 @@ static GameSurfaceView* pojavWindow;
 }
 
 - (void)registerMouseCallbacks:(GCMouse *)mouse {
+    if ([self.metadata[@"amethystUsesSDL"] boolValue]) {
+        // SDL's UIKit backend owns GCMouse callbacks in this mode.
+        return;
+    }
     NSLog(@"Input: Got mouse %@", mouse);
     mouse.mouseInput.mouseMovedHandler = ^(GCMouseInput * _Nonnull mouse, float deltaX, float deltaY) {
         if (!self.view.window.windowScene.pointerLockState.locked) {

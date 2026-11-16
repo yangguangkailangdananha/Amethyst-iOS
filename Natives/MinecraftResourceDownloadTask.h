@@ -8,10 +8,14 @@
 @property NSMutableDictionary* metadata;
 @property(nonatomic, copy) void(^handleError)(void);
 
++ (NSString *)modsDirectoryForSelectedProfile;
+
 - (NSURLSessionDownloadTask *)createDownloadTask:(NSString *)url size:(NSUInteger)size sha:(NSString *)sha altName:(NSString *)altName toPath:(NSString *)path;
+- (NSURLSessionDownloadTask *)createModDownloadTask:(NSString *)url size:(NSUInteger)size sha:(NSString *)sha altName:(NSString *)altName toPath:(NSString *)path;
 - (void)finishDownloadWithErrorString:(NSString *)error;
 
 - (void)downloadVersion:(NSDictionary *)version;
 - (void)downloadModpackFromAPI:(ModpackAPI *)api detail:(NSDictionary *)modDetail atIndex:(NSUInteger)selectedVersion;
+- (void)downloadModFromAPI:(ModpackAPI *)api detail:(NSDictionary *)modDetail atIndex:(NSUInteger)selectedVersion;
 
 @end

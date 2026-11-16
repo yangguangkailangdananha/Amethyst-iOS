@@ -21,6 +21,18 @@
 
 int clientAPI;
 
+static void AMEConfigureMobileGlues(void) {
+    const char *home = getenv("AME_HOME");
+    if (!home) {
+        return;
+    }
+    NSString *directory = [@(home) stringByAppendingPathComponent:@"MobileGlues"];
+    [NSFileManager.defaultManager createDirectoryAtPath:directory
+        withIntermediateDirectories:YES attributes:nil error:nil];
+    // MobileGlues otherwise falls back to the Android-only /sdcard/MG path.
+    setenv("MG_DIR_PATH", directory.UTF8String, 1);
+}
+
 void JNI_LWJGL_changeRenderer(const char* value_c) {
     JNIEnv *env;
     (*runtimeJavaVMPtr)->GetEnv(runtimeJavaVMPtr, (void **)&env, JNI_VERSION_1_4);
@@ -58,6 +70,7 @@ int pojavInitOpenGL() {
         set_gl_bridge_tbl();
     } else if ([renderer isEqualToString:@ RENDERER_NAME_MOBILEGLUES]) {
         renderer = @ RENDERER_NAME_MOBILEGLUES;
+        AMEConfigureMobileGlues();
         setenv("RENDERER", renderer.UTF8String, 1);
         set_gl_bridge_tbl();
     } else if ([renderer isEqualToString:@ RENDERER_NAME_MTL_ANGLE]) {
@@ -87,7 +100,11 @@ void pojavSetWindowHint(int hint, int value) {
             // case 4: use Zink?
             default:
                 setenv("RENDERER", RENDERER_NAME_MOBILEGLUES, 1);
+                AMEConfigureMobileGlues();
                 JNI_LWJGL_changeRenderer(RENDERER_NAME_MOBILEGLUES);
+                // GL3+ is selected before context initialization. Load the
+                // Android-compatible renderer as soon as the choice is made.
+                dlopen("@rpath/" RENDERER_NAME_MOBILEGLUES, RTLD_GLOBAL);
                 break;
         }
     }

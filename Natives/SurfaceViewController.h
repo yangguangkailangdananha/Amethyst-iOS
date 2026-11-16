@@ -25,6 +25,7 @@ CGPoint lastVirtualMousePoint;
 - (void)sendTouchPoint:(CGPoint)location withEvent:(int)event;
 - (void)updateSavedResolution;
 - (void)updateGrabState;
+- (void)attachSDLControlsToWindow:(UIWindow *)window;
 
 + (GameSurfaceView *)surface;
 + (BOOL)isRunning;

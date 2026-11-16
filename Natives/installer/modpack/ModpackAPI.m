@@ -51,9 +51,43 @@
         @"detail": modDetail,
         @"index": @(selectedVersion)
     };
-    [NSNotificationCenter.defaultCenter 
-        postNotificationName:@"InstallModpack" 
+    [NSNotificationCenter.defaultCenter
+        postNotificationName:@"InstallModpack"
         object:self userInfo:userInfo];
+}
+
+- (void)installModFromDetail:(NSDictionary *)modDetail atIndex:(NSUInteger)selectedVersion {
+    [NSNotificationCenter.defaultCenter
+        postNotificationName:@"InstallMod"
+        object:self
+        userInfo:@{
+            @"detail": modDetail,
+            @"index": @(selectedVersion)
+        }];
+}
+
+- (NSArray<NSURLSessionDownloadTask *> *)downloader:(MinecraftResourceDownloadTask *)downloader
+                  submitModDownloadTasksFromDetail:(NSDictionary *)modDetail
+                                           atIndex:(NSUInteger)selectedVersion
+                                            toPath:(NSString *)modsPath {
+    NSString *url = modDetail[@"versionUrls"][selectedVersion];
+    if (![url isKindOfClass:NSString.class] || url.length == 0) {
+        [downloader finishDownloadWithErrorString:localize(@"mod.error.invalid_download", nil)];
+        return @[];
+    }
+    NSString *sha = modDetail[@"versionHashes"][selectedVersion];
+    if ([sha isKindOfClass:NSNull.class]) {
+        sha = nil;
+    }
+    NSUInteger size = [modDetail[@"versionSizes"][selectedVersion] unsignedLongLongValue];
+    NSString *fileName = modDetail[@"versionFileNames"][selectedVersion];
+    if (![fileName isKindOfClass:NSString.class] || fileName.length == 0) {
+        fileName = [NSString stringWithFormat:@"%@-%@.jar", modDetail[@"id"], modDetail[@"versionNames"][selectedVersion]];
+    }
+    fileName = fileName.lastPathComponent;
+    NSString *path = [modsPath stringByAppendingPathComponent:fileName];
+    NSURLSessionDownloadTask *task = [downloader createModDownloadTask:url size:size sha:sha altName:nil toPath:path];
+    return task ? @[task] : @[];
 }
 
 @end

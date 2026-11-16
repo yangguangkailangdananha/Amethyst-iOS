@@ -28,14 +28,23 @@
     return self;
 }
 
++ (NSString *)modsDirectoryForSelectedProfile {
+    NSString *gameRoot = @(getenv("GAME_DIR"));
+    NSString *profileDirectory = [PLProfiles resolveKeyForCurrentProfile:@"gameDir"];
+    NSString *instancePath = profileDirectory.isAbsolutePath
+        ? profileDirectory
+        : [gameRoot stringByAppendingPathComponent:profileDirectory];
+    return [[instancePath stringByAppendingPathComponent:@"mods"] stringByStandardizingPath];
+}
+
 // Add file to the queue
-- (NSURLSessionDownloadTask *)createDownloadTask:(NSString *)url size:(NSUInteger)size sha:(NSString *)sha altName:(NSString *)altName toPath:(NSString *)path success:(void (^)())success {
+- (NSURLSessionDownloadTask *)createDownloadTask:(NSString *)url size:(NSUInteger)size sha:(NSString *)sha altName:(NSString *)altName toPath:(NSString *)path success:(void (^)())success requiresGameAccess:(BOOL)requiresGameAccess {
     BOOL fileExists = [NSFileManager.defaultManager fileExistsAtPath:path];
     // logSuccess?
     if (fileExists && [self checkSHA:sha forFile:path altName:altName]) {
         if (success) success();
         return nil;
-    } else if (![self checkAccessWithDialog:YES]) {
+    } else if (requiresGameAccess && ![self checkAccessWithDialog:YES]) {
         return nil;
     }
 
@@ -72,6 +81,14 @@
     }
 
     return task;
+}
+
+- (NSURLSessionDownloadTask *)createDownloadTask:(NSString *)url size:(NSUInteger)size sha:(NSString *)sha altName:(NSString *)altName toPath:(NSString *)path success:(void (^)())success {
+    return [self createDownloadTask:url size:size sha:sha altName:altName toPath:path success:success requiresGameAccess:YES];
+}
+
+- (NSURLSessionDownloadTask *)createModDownloadTask:(NSString *)url size:(NSUInteger)size sha:(NSString *)sha altName:(NSString *)altName toPath:(NSString *)path {
+    return [self createDownloadTask:url size:size sha:sha altName:altName toPath:path success:nil requiresGameAccess:NO];
 }
 
 - (NSURLSessionDownloadTask *)createDownloadTask:(NSString *)url size:(NSUInteger)size sha:(NSString *)sha altName:(NSString *)altName toPath:(NSString *)path {
@@ -280,6 +297,41 @@
         [api downloader:self submitDownloadTasksFromPackage:packagePath toPath:path];
     }];
     [task resume];
+}
+
+- (void)downloadModFromAPI:(ModpackAPI *)api detail:(NSDictionary *)modDetail atIndex:(NSUInteger)selectedVersion {
+    self.versionTitle = [NSString stringWithFormat:@"%@ %@",
+        modDetail[@"title"] ?: modDetail[@"id"],
+        modDetail[@"versionNames"][selectedVersion]];
+    [self prepareForDownload];
+
+    NSString *modsPath = [self.class modsDirectoryForSelectedProfile];
+    NSError *error;
+    BOOL created = [NSFileManager.defaultManager createDirectoryAtPath:modsPath
+        withIntermediateDirectories:YES attributes:nil error:&error];
+    if (!created) {
+        [self finishDownloadWithErrorString:error.localizedDescription];
+        return;
+    }
+
+    NSArray<NSURLSessionDownloadTask *> *tasks = [api downloader:self
+        submitModDownloadTasksFromDetail:modDetail atIndex:selectedVersion toPath:modsPath];
+    if (self.progress.cancelled) {
+        return;
+    }
+
+    // Drop the placeholder byte used while tasks are being assembled.
+    self.progress.totalUnitCount--;
+    self.textProgress.totalUnitCount--;
+    if (tasks.count == 0) {
+        // Every requested file was already present and passed its hash check.
+        self.progress.totalUnitCount = 1;
+        self.progress.completedUnitCount = 1;
+        self.textProgress.totalUnitCount = 1;
+        self.textProgress.completedUnitCount = 1;
+        return;
+    }
+    [tasks makeObjectsPerformSelector:@selector(resume)];
 }
 
 #pragma mark - Utilities

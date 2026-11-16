@@ -9,6 +9,7 @@
 
 #include <objc/runtime.h>
 #include "ios_uikit_bridge.h"
+#include "SDLInputBridge.h"
 #include "utils.h"
 
 void internal_showDialog(NSString* title, NSString* message) {
@@ -128,6 +129,7 @@ void UIKit_returnToSplitView() {
     // Researching memory-safe ways to return from SurfaceViewController to the split view
     // so that the app doesn't close when quitting the game (similar behaviour to Android)
     dispatch_async(dispatch_get_main_queue(), ^{
+        AMESDLHideWindows();
         UIWindow *window = UIWindow.mainWindow;
 
         // Return from JavaGUIViewController

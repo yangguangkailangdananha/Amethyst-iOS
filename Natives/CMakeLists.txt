@@ -1,7 +1,49 @@
-cmake_minimum_required(VERSION 3.6)
+cmake_minimum_required(VERSION 3.16)
 project(AngelAuraAmethyst)
 
 configure_file(${CMAKE_CURRENT_LIST_DIR}/config.h.in ${CMAKE_CURRENT_LIST_DIR}/config.h)
+
+# Build SDL's native UIKit backend. The small source patch maps Minecraft's
+# desktop GL request to the GLES 3 context used by MobileGlues on iOS.
+set(SDL_SHARED ON CACHE BOOL "" FORCE)
+set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
+set(SDL_FRAMEWORK OFF CACHE BOOL "" FORCE)
+
+find_package(Git REQUIRED)
+set(AMES_SDL_DIR "${CMAKE_CURRENT_LIST_DIR}/external/SDL")
+set(AMES_SDL_PATCH "${CMAKE_CURRENT_LIST_DIR}/patches/sdl3-uikit-mobileglues.patch")
+execute_process(
+    COMMAND "${GIT_EXECUTABLE}" -C "${AMES_SDL_DIR}" apply --check "${AMES_SDL_PATCH}"
+    RESULT_VARIABLE AMES_SDL_PATCH_NEEDED
+    OUTPUT_QUIET ERROR_QUIET)
+if(AMES_SDL_PATCH_NEEDED EQUAL 0)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" -C "${AMES_SDL_DIR}" apply "${AMES_SDL_PATCH}"
+        RESULT_VARIABLE AMES_SDL_PATCH_RESULT
+        OUTPUT_QUIET ERROR_QUIET)
+    if(NOT AMES_SDL_PATCH_RESULT EQUAL 0)
+        message(FATAL_ERROR "Unable to apply the Amethyst SDL UIKit patch")
+    endif()
+else()
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" -C "${AMES_SDL_DIR}" apply --reverse --check "${AMES_SDL_PATCH}"
+        RESULT_VARIABLE AMES_SDL_PATCH_APPLIED
+        OUTPUT_QUIET ERROR_QUIET)
+    if(NOT AMES_SDL_PATCH_APPLIED EQUAL 0)
+        message(FATAL_ERROR "SDL UIKit sources differ from the expected release-3.4.20 patch base")
+    endif()
+endif()
+add_subdirectory(external/SDL "${CMAKE_BINARY_DIR}/SDL")
+target_sources(SDL3-shared PRIVATE SDLAmethystEvents.c)
+target_include_directories(SDL3-shared PRIVATE "${AMES_SDL_DIR}/src")
+# The existing payload step collects only the native build root's dylibs.
+set_target_properties(SDL3-shared PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -target arm64-apple-ios -mcpu=apple-a8 -fcommon -fobjc-arc -ObjC -F'${CMAKE_OSX_SYSROOT}/System/Cryptexes/OS/System/Library/Frameworks'")
 set(CMAKE_C_FLAGS_DEBUG "-funwind-tables -g")
@@ -166,6 +208,7 @@ add_executable(AngelAuraAmethyst
   PLProfiles.m
   SceneDelegate.m
   SceneExternalDelegate.m
+  SDLInputBridge.m
   SurfaceViewController.m
   SurfaceViewController+ExternalDisplay.m
   SurfaceViewController+LogView.m
@@ -202,6 +245,7 @@ target_link_libraries(AngelAuraAmethyst
   "-framework UnzipKit"
   "-framework WebKit"
   "-weak_framework SafariServices"
+  SDL3::SDL3-shared
 )
 set_target_properties(AngelAuraAmethyst PROPERTIES
   MACOSX_BUNDLE TRUE

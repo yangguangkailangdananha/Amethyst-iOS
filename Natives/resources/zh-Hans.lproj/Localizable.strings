@@ -239,6 +239,18 @@
 "preference.title.debug_show_layout_overlap" = "布局重叠显示";
 "preference.detail.debug_show_layout_overlap" = "用浅黄色覆盖每个视图，颜色越深则重叠越多";
 
+"profile.title.install_mod" = "安装模组";
+"modpack.browser.title" = "安装整合包";
+"modpack.browser.search" = "搜索 Modrinth 整合包";
+"mod.browser.title" = "安装模组";
+"mod.browser.search" = "搜索适配当前配置的 Modrinth 模组";
+"mod.action.import" = "导入本地 JAR";
+"mod.import.success" = "已安装 %lu 个模组文件。";
+"mod.import.skipped" = "已跳过 %lu 个重复或非 JAR 文件，未覆盖已有文件。";
+"mod.error.no_compatible_version" = "没有找到同时匹配当前 Minecraft 版本和模组加载器的版本。";
+"mod.error.missing_dependency" = "没有找到项目 %@ 所需的兼容依赖版本。";
+"mod.error.invalid_download" = "所选模组版本没有可下载的文件。";
+
 "controller_configurator.title.current" = "游戏键盘配置文件";
 "controller_configurator.title.type.xbox" = "Xbox";
 "controller_configurator.title.type.playstation" = "PlayStation";

@@ -1,6 +1,10 @@
 #import "AFNetworking.h"
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "LauncherNavigationController.h"
+#import "LauncherPreferences.h"
+#import "MinecraftResourceDownloadTask.h"
 #import "ModpackInstallViewController.h"
+#import "PLProfiles.h"
 #import "UIKit+AFNetworking.h"
 #import "UIKit+hook.h"
 #import "WFWorkflowProgressView.h"
@@ -14,7 +18,7 @@
 #define kCurseForgeClassIDModpack 4471
 #define kCurseForgeClassIDMod 6
 
-@interface ModpackInstallViewController()<UIContextMenuInteractionDelegate>
+@interface ModpackInstallViewController()<UIContextMenuInteractionDelegate, UIDocumentPickerDelegate>
 @property(nonatomic) UISearchController *searchController;
 @property(nonatomic) UIMenu *currentMenu;
 @property(nonatomic) NSMutableArray *list;
@@ -24,21 +28,79 @@
 
 @implementation ModpackInstallViewController
 
+- (instancetype)init {
+    return [self initWithIndividualMods:NO];
+}
+
+- (instancetype)initWithIndividualMods:(BOOL)individualMods {
+    self = [super initWithStyle:UITableViewStylePlain];
+    if (self) {
+        _individualMods = individualMods;
+    }
+    return self;
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    //NSString *curseforgeAPIKey = CONFIG_CURSEFORGE_API_KEY;
+    self.title = localize(self.individualMods ? @"mod.browser.title" : @"modpack.browser.title", nil);
     self.searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
     self.searchController.searchResultsUpdater = self;
     self.searchController.obscuresBackgroundDuringPresentation = NO;
+    self.searchController.searchBar.placeholder = localize(self.individualMods
+        ? @"mod.browser.search" : @"modpack.browser.search", nil);
     self.navigationItem.searchController = self.searchController;
     self.modrinth = [ModrinthAPI new];
     self.filters = @{
-        @"isModpack": @(YES),
+        @"isModpack": @(!self.individualMods),
         @"name": @" "
-        // mcVersion
     }.mutableCopy;
+    if (self.individualMods) {
+        NSString *mcVersion = [self selectedMinecraftVersion];
+        NSString *loader = [self selectedModLoader];
+        if (mcVersion.length > 0) {
+            self.filters[@"mcVersion"] = mcVersion;
+        }
+        if (loader.length > 0) {
+            self.filters[@"loader"] = loader;
+        }
+    }
+    [self switchToReadyState];
     [self updateSearchResults];
+}
+
+- (NSString *)selectedMinecraftVersion {
+    NSString *versionID = PLProfiles.current.selectedProfile[@"lastVersionId"];
+    if ([versionID isEqualToString:@"latest-release"]) {
+        return getPrefObject(@"internal.latest_version.release");
+    } else if ([versionID isEqualToString:@"latest-snapshot"]) {
+        return getPrefObject(@"internal.latest_version.snapshot");
+    }
+    NSString *metadataPath = [NSString stringWithFormat:@"%1$s/versions/%2$@/%2$@.json", getenv("GAME_DIR"), versionID];
+    NSDictionary *metadata = parseJSONFromFile(metadataPath);
+    if ([metadata[@"inheritsFrom"] isKindOfClass:NSString.class]) {
+        return metadata[@"inheritsFrom"];
+    }
+    if (metadata[@"NSErrorObject"] &&
+        ([versionID containsString:@"fabric"] || [versionID containsString:@"quilt"] ||
+         [versionID containsString:@"forge"] || [versionID containsString:@"neoforge"])) {
+        return nil;
+    }
+    return versionID;
+}
+
+- (NSString *)selectedModLoader {
+    NSString *originalVersionID = PLProfiles.current.selectedProfile[@"lastVersionId"];
+    NSString *versionID = originalVersionID.lowercaseString;
+    NSString *metadataPath = [NSString stringWithFormat:@"%1$s/versions/%2$@/%2$@.json", getenv("GAME_DIR"), originalVersionID];
+    NSDictionary *metadata = parseJSONFromFile(metadataPath);
+    NSString *metadataID = [metadata[@"id"] isKindOfClass:NSString.class]
+        ? [metadata[@"id"] lowercaseString] : versionID;
+    if ([metadataID containsString:@"neoforge"]) return @"neoforge";
+    if ([metadataID containsString:@"fabric"]) return @"fabric";
+    if ([metadataID containsString:@"quilt"]) return @"quilt";
+    if ([metadataID containsString:@"forge"]) return @"forge";
+    return nil;
 }
 
 - (void)loadSearchResultsWithPrevList:(BOOL)prevList {
@@ -78,18 +140,95 @@
 
 - (void)switchToLoadingState {
     UIActivityIndicatorView *indicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:indicator];
+    self.navigationItem.rightBarButtonItems = @[[[UIBarButtonItem alloc] initWithCustomView:indicator]];
     [indicator startAnimating];
     self.navigationController.modalInPresentation = YES;
     self.tableView.allowsSelection = NO;
 }
 
 - (void)switchToReadyState {
-    UIActivityIndicatorView *indicator = (id)self.navigationItem.rightBarButtonItem.customView;
-    [indicator stopAnimating];
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose target:self action:@selector(actionClose)];
+    UIBarButtonItem *currentItem = self.navigationItem.rightBarButtonItems.firstObject;
+    if ([currentItem.customView isKindOfClass:UIActivityIndicatorView.class]) {
+        [(UIActivityIndicatorView *)currentItem.customView stopAnimating];
+    }
+    UIBarButtonItem *closeItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose
+        target:self action:@selector(actionClose)];
+    if (self.individualMods) {
+        UIBarButtonItem *importItem = [[UIBarButtonItem alloc] initWithTitle:localize(@"mod.action.import", nil)
+            style:UIBarButtonItemStylePlain target:self action:@selector(actionImportLocalMod)];
+        self.navigationItem.rightBarButtonItems = @[closeItem, importItem];
+    } else {
+        self.navigationItem.rightBarButtonItems = @[closeItem];
+    }
     self.navigationController.modalInPresentation = NO;
     self.tableView.allowsSelection = YES;
+}
+
+#pragma mark Local mod import
+
+- (void)actionImportLocalMod {
+    UIDocumentPickerViewController *documentPicker = [[UIDocumentPickerViewController alloc]
+        initForOpeningContentTypes:@[[UTType typeWithMIMEType:@"application/java-archive"]] asCopy:YES];
+    documentPicker.delegate = self;
+    documentPicker.allowsMultipleSelection = YES;
+    documentPicker.modalPresentationStyle = UIModalPresentationFormSheet;
+    [self presentViewController:documentPicker animated:YES completion:nil];
+}
+
+- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    [self importLocalModsAtURLs:urls];
+}
+
+- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentAtURL:(NSURL *)url {
+    [self importLocalModsAtURLs:@[url]];
+}
+
+- (void)importLocalModsAtURLs:(NSArray<NSURL *> *)urls {
+    NSString *modsPath = [MinecraftResourceDownloadTask modsDirectoryForSelectedProfile];
+    NSError *error;
+    if (![NSFileManager.defaultManager createDirectoryAtPath:modsPath
+        withIntermediateDirectories:YES attributes:nil error:&error]) {
+        showDialog(localize(@"Error", nil), error.localizedDescription);
+        return;
+    }
+
+    NSUInteger imported = 0;
+    NSUInteger skipped = 0;
+    NSMutableArray<NSString *> *errors = [NSMutableArray new];
+    for (NSURL *url in urls) {
+        NSString *fileName = url.lastPathComponent;
+        if (![fileName.pathExtension.lowercaseString isEqualToString:@"jar"]) {
+            skipped++;
+            continue;
+        }
+        NSString *destination = [modsPath stringByAppendingPathComponent:fileName];
+        if ([NSFileManager.defaultManager fileExistsAtPath:destination]) {
+            skipped++;
+            continue;
+        }
+
+        BOOL accessing = [url startAccessingSecurityScopedResource];
+        BOOL copied = [NSFileManager.defaultManager copyItemAtURL:url
+            toURL:[NSURL fileURLWithPath:destination] error:&error];
+        if (accessing) {
+            [url stopAccessingSecurityScopedResource];
+        }
+        if (copied) {
+            imported++;
+        } else {
+            [errors addObject:[NSString stringWithFormat:@"%@: %@", fileName, error.localizedDescription]];
+        }
+    }
+
+    NSMutableArray<NSString *> *messages = [NSMutableArray new];
+    if (imported > 0) {
+        [messages addObject:[NSString stringWithFormat:localize(@"mod.import.success", nil), imported]];
+    }
+    if (skipped > 0) {
+        [messages addObject:[NSString stringWithFormat:localize(@"mod.import.skipped", nil), skipped]];
+    }
+    [messages addObjectsFromArray:errors];
+    showDialog(localize(@"mod.action.import", nil), [messages componentsJoinedByString:@"\n"]);
 }
 
 #pragma mark UIContextMenu
@@ -139,14 +278,42 @@
     return cell;
 }
 
+- (NSArray<NSNumber *> *)compatibleVersionIndicesForDetails:(NSDictionary *)details {
+    NSMutableArray<NSNumber *> *indices = [NSMutableArray new];
+    NSString *mcVersion = self.filters[@"mcVersion"];
+    NSString *loader = self.filters[@"loader"];
+    for (NSUInteger i = 0; i < [details[@"versionNames"] count]; i++) {
+        if (self.individualMods && mcVersion.length > 0) {
+            NSArray *gameVersions = details[@"versionGameVersions"][i];
+            if (![gameVersions containsObject:mcVersion]) {
+                continue;
+            }
+        }
+        if (self.individualMods && loader.length > 0) {
+            NSArray *loaders = details[@"versionLoaders"][i];
+            if (![loaders containsObject:loader]) {
+                continue;
+            }
+        }
+        [indices addObject:@(i)];
+    }
+    return indices;
+}
+
 - (void)showDetails:(NSDictionary *)details atIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:indexPath];
+    NSArray<NSNumber *> *compatibleIndices = [self compatibleVersionIndicesForDetails:details];
+    if (compatibleIndices.count == 0) {
+        showDialog(localize(@"Error", nil), localize(@"mod.error.no_compatible_version", nil));
+        return;
+    }
 
     NSMutableArray<UIAction *> *menuItems = [[NSMutableArray alloc] init];
-    [details[@"versionNames"] enumerateObjectsUsingBlock:
-    ^(NSString *name, NSUInteger i, BOOL *stop) {
+    for (NSNumber *indexNumber in compatibleIndices) {
+        NSUInteger index = indexNumber.unsignedIntegerValue;
+        NSString *name = details[@"versionNames"][index];
         NSString *nameWithVersion = name;
-        NSString *mcVersion = details[@"mcVersionNames"][i];
+        NSString *mcVersion = details[@"mcVersionNames"][index];
         if (![name hasSuffix:mcVersion]) {
             nameWithVersion = [NSString stringWithFormat:@"%@ - %@", name, mcVersion];
         }
@@ -154,12 +321,17 @@
             actionWithTitle:nameWithVersion
             image:nil identifier:nil
             handler:^(UIAction *action) {
-            [self actionClose];
-            NSString *tmpIconPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"icon.png"];
-                [UIImagePNGRepresentation([cell.imageView.image _imageWithSize:CGSizeMake(40, 40)]) writeToFile:tmpIconPath atomically:YES];
-            [self.modrinth installModpackFromDetail:self.list[indexPath.row] atIndex:i];
-        }]];
-    }];
+                [self actionClose];
+                if (self.individualMods) {
+                    [self.modrinth installModFromDetail:self.list[indexPath.row] atIndex:index];
+                } else {
+                    NSString *tmpIconPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"icon.png"];
+                    [UIImagePNGRepresentation([cell.imageView.image _imageWithSize:CGSizeMake(40, 40)])
+                        writeToFile:tmpIconPath atomically:YES];
+                    [self.modrinth installModpackFromDetail:self.list[indexPath.row] atIndex:index];
+                }
+            }]];
+    }
 
     self.currentMenu = [UIMenu menuWithTitle:@"" children:menuItems];
     UIContextMenuInteraction *interaction = [[UIContextMenuInteraction alloc] initWithDelegate:self];

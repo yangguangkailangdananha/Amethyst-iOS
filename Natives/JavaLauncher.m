@@ -11,6 +11,9 @@
 
 #include "utils.h"
 
+#define SDL_MAIN_HANDLED
+#include <SDL3/SDL_main.h>
+
 #import "ios_uikit_bridge.h"
 #import "JavaLauncher.h"
 #import "LauncherPreferences.h"
@@ -149,10 +152,12 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     }
 
     BOOL launchJar = NO;
+    BOOL usesSDL = NO;
     NSString *gameDir;
     NSString *defaultJRETag;
     NSCAssert(launchTarget, @"Unexpected nil launchTarget");
     if ([launchTarget isKindOfClass:NSDictionary.class]) {
+        usesSDL = [launchTarget[@"amethystUsesSDL"] boolValue];
         // Get preferred Java version from current profile
         int preferredJavaVersion = [PLProfiles resolveKeyForCurrentProfile:@"javaVersion"].intValue;
         if (preferredJavaVersion > 0) {
@@ -171,6 +176,15 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
 
         // Setup RENDERER
         NSString *renderer = [PLProfiles resolveKeyForCurrentProfile:@"renderer"];
+        if (usesSDL) {
+            // Minecraft's SDL backend requests desktop OpenGL. MobileGlues
+            // translates it to the GLES 3 context owned by SDL UIKit.
+            renderer = @RENDERER_NAME_MOBILEGLUES;
+            setenv("SDL_VIDEO_DRIVER", "uikit", 1);
+            NSString *mgDirectory = [@(getenv("AME_HOME")) stringByAppendingPathComponent:@"MobileGlues"];
+            [fm createDirectoryAtPath:mgDirectory withIntermediateDirectories:YES attributes:nil error:nil];
+            setenv("MG_DIR_PATH", mgDirectory.UTF8String, 1);
+        }
         NSLog(@"[JavaLauncher] RENDERER is set to %@\n", renderer);
         setenv("RENDERER", renderer.UTF8String, 1);
         // Setup gameDir
@@ -207,6 +221,25 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     setenv("JAVA_HOME", javaHome.UTF8String, 1);
     NSLog(@"[JavaLauncher] JAVA_HOME has been set to %@", javaHome);
 
+    NSString *frameworksPath = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Frameworks"];
+    if (usesSDL) {
+        NSString *sdlPath = [frameworksPath stringByAppendingPathComponent:@"libSDL3.dylib"];
+        NSString *mgPath = [frameworksPath stringByAppendingPathComponent:@"libmobileglues.dylib"];
+        if (!dlopen(mgPath.UTF8String, RTLD_NOW | RTLD_GLOBAL)) {
+            NSLog(@"[SDL] Unable to load MobileGlues: %s", dlerror());
+            showDialog(@"Renderer error", @"MobileGlues is required by Minecraft's SDL backend but could not be loaded.");
+            return 1;
+        }
+        if (!dlopen(sdlPath.UTF8String, RTLD_NOW | RTLD_GLOBAL)) {
+            NSLog(@"[SDL] Unable to load SDL3: %s", dlerror());
+            showDialog(@"SDL error", @"SDL3 could not be loaded from the application Frameworks directory.");
+            return 1;
+        }
+        // Amethyst owns UIApplication/SceneDelegate and starts SDL from the JVM,
+        // so SDL_main is deliberately bypassed but still marked ready.
+        dispatch_sync(dispatch_get_main_queue(), ^{ SDL_SetMainReady(); });
+    }
+
     int allocmem;
     if (getPrefBool(@"java.auto_ram")) {
         CGFloat autoRatio = getEntitlementValue(@"com.apple.private.memorystatus") ? 0.4 : 0.25;
@@ -239,6 +272,17 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     margv[++margc] = "-Xms128M";
     margv[++margc] = [NSString stringWithFormat:@"-Xmx%dM", allocmem].UTF8String;
     margv[++margc] = [NSString stringWithFormat:@"-Djava.library.path=%@/Frameworks", NSBundle.mainBundle.bundlePath].UTF8String;
+    if (usesSDL) {
+        margv[++margc] = [@"-Dorg.lwjgl.librarypath=" stringByAppendingString:frameworksPath].UTF8String;
+        margv[++margc] = [@"-Dorg.lwjgl.libname=" stringByAppendingString:[frameworksPath stringByAppendingPathComponent:@"liblwjgl.dylib"]].UTF8String;
+        margv[++margc] = [@"-Dorg.lwjgl.sdl.libname=" stringByAppendingString:[frameworksPath stringByAppendingPathComponent:@"libSDL3.dylib"]].UTF8String;
+        margv[++margc] = [@"-Dorg.lwjgl.system.jemalloc.libname=" stringByAppendingString:[frameworksPath stringByAppendingPathComponent:@"libjemalloc.dylib"]].UTF8String;
+        margv[++margc] = [@"-Dorg.lwjgl.freetype.libname=" stringByAppendingString:[frameworksPath stringByAppendingPathComponent:@"libfreetype.dylib"]].UTF8String;
+        margv[++margc] = [@"-Dorg.lwjgl.openal.libname=" stringByAppendingString:[frameworksPath stringByAppendingPathComponent:@"libopenal.dylib"]].UTF8String;
+        margv[++margc] = [@"-Dorg.lwjgl.shaderc.libname=" stringByAppendingString:[frameworksPath stringByAppendingPathComponent:@"libshaderc.dylib"]].UTF8String;
+        margv[++margc] = [@"-Dorg.lwjgl.spvc.libname=" stringByAppendingString:[frameworksPath stringByAppendingPathComponent:@"libspirv-cross.dylib"]].UTF8String;
+        margv[++margc] = [@"-Dorg.lwjgl.vulkan.libname=" stringByAppendingString:[frameworksPath stringByAppendingPathComponent:@"libMoltenVK.dylib"]].UTF8String;
+    }
     margv[++margc] = [NSString stringWithFormat:@"-Duser.dir=%@", gameDir].UTF8String;
     margv[++margc] = [NSString stringWithFormat:@"-Duser.home=%s", getenv("AME_HOME")].UTF8String;
     margv[++margc] = [NSString stringWithFormat:@"-Duser.timezone=%@", NSTimeZone.localTimeZone.name].UTF8String;
@@ -251,7 +295,9 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     // Preset OpenGL libname
     const char *glLibName = getenv("RENDERER");
     if (glLibName) {
-        if (!strcmp(glLibName, "auto")) {
+        if (usesSDL) {
+            glLibName = [frameworksPath stringByAppendingPathComponent:@"libmobileglues.dylib"].UTF8String;
+        } else if (!strcmp(glLibName, "auto")) {
             // workaround only applies to 1.20.2+
             glLibName = RENDERER_NAME_MTL_ANGLE;
         }

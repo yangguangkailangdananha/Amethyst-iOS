@@ -1,0 +1,25 @@
+diff --git a/src/video/uikit/SDL_uikitopengles.m b/src/video/uikit/SDL_uikitopengles.m
+index db67a8e..fc4a08f 100644
+--- a/src/video/uikit/SDL_uikitopengles.m
++++ b/src/video/uikit/SDL_uikitopengles.m
+@@ -124,13 +124,16 @@ SDL_GLContext UIKit_GL_CreateContext(SDL_VideoDevice *_this, SDL_Window *window)
+ 
+         /* The EAGLRenderingAPI enum values currently map 1:1 to major GLES
+          * versions. */
+-        EAGLRenderingAPI api = major;
++        EAGLRenderingAPI api;
+ 
+-        // iOS currently doesn't support GLES >3.0.
++        // Amethyst: Minecraft requests desktop OpenGL 3.x, while UIKit only
++        // accepts GLES through EAGL. MobileGlues provides the desktop GL entry
++        // points on top of this GLES 3 context, so normalize the request.
+         if (major > 3 || (major == 3 && minor > 0)) {
+-            SDL_SetError("OpenGL ES %d.%d context could not be created", major, minor);
+-            return NULL;
++            major = 3;
++            minor = 0;
+         }
++        api = (EAGLRenderingAPI)major;
+ 
+         if (_this->gl_config.multisamplebuffers > 0) {
+             samples = _this->gl_config.multisamplesamples;

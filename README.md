@@ -9,12 +9,16 @@
 Amethyst is a Minecraft: Java Edition launcher for Android, iOS, and iPadOS, based off of zhuowei's [Boardwalk](https://github.com/zhuowei/Boardwalk) project.
 * Supports most versions of Minecraft: Java Edition, from the very first beta to the newest snapshots.
 * Supports Forge, Fabric, OptiFine, and Quilt for you to customize the experience with supported mods.
+* Installs individual mods and required dependencies from Modrinth, or imports local JAR files into the selected profile.
 * Includes customizable on-screen controls, keyboard and mouse support, and game controller support.
 * Optimized for jailbroken and TrollStore devices to enable better capabilities.
 * Microsoft account and demo mode support for logging into Minecraft.
 * ...and much more!
 
 This repository contains the code for our iOS and iPadOS port of Amethyst. Looking for [Android?](https://github.com/AngelAuraMC/Amethyst-Android)
+
+### SDL backend for newer Minecraft versions
+Versions whose Mojang metadata includes `org.lwjgl:lwjgl-sdl` use the native SDL3/UIKit window and input backend with LWJGL 3.4.3 and MobileGlues. Older versions retain the existing GLFW path. SDL is pinned to `release-3.4.20`; run `git submodule update --init --recursive` before building. The CMake build applies the idempotent UIKit compatibility patch in `Natives/patches/sdl3-uikit-mobileglues.patch`.
 
 ## Getting started with Amethyst
 The [Amethyst wiki](https://wiki.angelauramc.dev/wiki/getting_started/INSTALL.html#ios) has extensive documentation on how to install, set up, and play! For those who wish to install quickly, here's the basics:
@@ -99,6 +103,7 @@ Amethyst is amazing, and surprisingly stable, and it wouldn't be this way withou
 - [LWJGLX](https://github.com/PojavLauncherTeam/lwjglx) (LWJGL2 API compatibility layer for LWJGL3): unknown license.
 - [DBNumberedSlider](https://github.com/khanhduytran0/DBNumberedSlider): [Apache 2.0 License](https://github.com/immago/DBNumberedSlider/blob/master/LICENSE)
 - [fishhook](https://github.com/khanhduytran0/fishhook): [BSD-3 License](https://github.com/facebook/fishhook/blob/main/LICENSE).
+- [SDL3](https://github.com/libsdl-org/SDL): [zlib License](https://github.com/libsdl-org/SDL/blob/main/LICENSE.txt).
 - [shaderc](https://github.com/khanhduytran0/shaderc) (used by Vulkan rendering mods): [Apache 2.0 License](https://github.com/google/shaderc/blob/main/LICENSE).
 - [NRFileManager](https://github.com/mozilla-mobile/firefox-ios/tree/b2f89ac40835c5988a1a3eb642982544e00f0f90/ThirdParty/NRFileManager): [MPL-2.0 License](https://www.mozilla.org/en-US/MPL/2.0)
 - [AltKit](https://github.com/rileytestut/AltKit)

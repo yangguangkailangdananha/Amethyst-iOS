@@ -68,8 +68,12 @@
 }
 
 + (void)tweakVersionJson:(NSMutableDictionary *)json {
+    json[@"amethystUsesSDL"] = @NO;
     // Exclude some libraries
     for (NSMutableDictionary *library in json[@"libraries"]) {
+        if ([library[@"name"] hasPrefix:@"org.lwjgl:lwjgl-sdl:"]) {
+            json[@"amethystUsesSDL"] = @YES;
+        }
         library[@"skip"] = @(
             // Exclude platform-dependant libraries
             library[@"downloads"][@"classifiers"] != nil ||
