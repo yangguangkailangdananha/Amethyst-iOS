@@ -1,6 +1,7 @@
 #import "MinecraftResourceDownloadTask.h"
 #import "ModrinthAPI.h"
 #import "PLProfiles.h"
+#import "utils.h"
 
 static BOOL AMESharesValues(NSArray<NSString *> *left, NSArray<NSString *> *right) {
     if (left.count == 0 || right.count == 0) {
@@ -202,7 +203,7 @@ static BOOL AMESharesValues(NSArray<NSString *> *left, NSArray<NSString *> *righ
             [downloader finishDownloadWithErrorString:localize(@"mod.error.invalid_download", nil)];
             return;
         }
-        NSArray *dependencyTasks = [super downloader:self
+        NSArray *dependencyTasks = [super downloader:downloader
             submitModDownloadTasksFromDetail:detail atIndex:0 toPath:modsPath];
         [tasks addObjectsFromArray:dependencyTasks];
         [self addRequiredDependencies:selectedVersion[@"dependencies"]
@@ -219,7 +220,7 @@ static BOOL AMESharesValues(NSArray<NSString *> *left, NSArray<NSString *> *righ
                   submitModDownloadTasksFromDetail:(NSDictionary *)modDetail
                                            atIndex:(NSUInteger)selectedVersion
                                             toPath:(NSString *)modsPath {
-    NSMutableArray<NSURLSessionDownloadTask *> *tasks = [[super downloader:self
+    NSMutableArray<NSURLSessionDownloadTask *> *tasks = [[super downloader:downloader
         submitModDownloadTasksFromDetail:modDetail atIndex:selectedVersion toPath:modsPath] mutableCopy];
     NSMutableSet<NSString *> *visited = [NSMutableSet new];
     if ([modDetail[@"id"] isKindOfClass:NSString.class]) {
