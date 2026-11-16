@@ -2,6 +2,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <libgen.h>
+#include <mach/mach.h>
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -114,7 +115,7 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     if (requiresTXMWorkaround) {
         static void *result;
         if(!result) result = JIT26CreateRegionLegacy(getpagesize());
-        if ((uint32_t)result != 0x690000E0) {
+        if ((uintptr_t)result != 0x690000E0) {
             munmap(result, getpagesize());
             // we can't continue since legacy script only allows calling breakpoint once
             NSString *inBundleScriptPath = [NSBundle.mainBundle pathForResource:@"UniversalJIT26" ofType:@"js"];
