@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#include <dlfcn.h>
 
 #define realUIIdiom UIDevice.currentDevice.userInterfaceIdiom
 extern NSNotificationName UIPresentationControllerPresentationTransitionWillBeginNotification;
@@ -19,8 +20,12 @@ extern NSNotificationName UIPresentationControllerPresentationTransitionWillBegi
 - (UIView *)buttonGlassView;
 @end
 
-// private functions
-extern BOOL _UISolariumEnabled(void) __attribute__((weak_import));
+// Resolve this optional private UIKit function dynamically so binaries built
+// with older SDKs do not acquire a link-time dependency on it.
+static inline BOOL AMESLiquidGlassEnabled(void) {
+    BOOL (*isEnabled)(void) = (BOOL (*)(void))dlsym(RTLD_DEFAULT, "_UISolariumEnabled");
+    return isEnabled != NULL && isEnabled();
+}
 
 @interface UIBarButtonItem(private)
 - (UIView *)view;
