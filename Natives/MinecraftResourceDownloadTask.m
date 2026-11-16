@@ -7,6 +7,7 @@
 #import "LauncherPreferences.h"
 #import "MinecraftResourceDownloadTask.h"
 #import "MinecraftResourceUtils.h"
+#import "PLProfiles.h"
 #import "ios_uikit_bridge.h"
 #import "utils.h"
 
@@ -300,9 +301,6 @@
 }
 
 - (void)downloadModFromAPI:(ModpackAPI *)api detail:(NSDictionary *)modDetail atIndex:(NSUInteger)selectedVersion {
-    self.versionTitle = [NSString stringWithFormat:@"%@ %@",
-        modDetail[@"title"] ?: modDetail[@"id"],
-        modDetail[@"versionNames"][selectedVersion]];
     [self prepareForDownload];
 
     NSString *modsPath = [self.class modsDirectoryForSelectedProfile];
