@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(AngelAuraAmethyst)
+project(AngelAuraAmethyst LANGUAGES C CXX OBJC)
 
 configure_file(${CMAKE_CURRENT_LIST_DIR}/config.h.in ${CMAKE_CURRENT_LIST_DIR}/config.h)
 
@@ -46,6 +46,7 @@ set_target_properties(SDL3-shared PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -target arm64-apple-ios -mcpu=apple-a8 -fcommon -fobjc-arc -ObjC -F'${CMAKE_OSX_SYSROOT}/System/Cryptexes/OS/System/Library/Frameworks'")
+set(CMAKE_OBJC_FLAGS "${CMAKE_OBJC_FLAGS} -target arm64-apple-ios -mcpu=apple-a8 -fcommon -fobjc-arc -F'${CMAKE_OSX_SYSROOT}/System/Cryptexes/OS/System/Library/Frameworks'")
 set(CMAKE_C_FLAGS_DEBUG "-funwind-tables -g")
 
 if("${CMAKE_HOST_SYSTEM_NAME}" MATCHES "Linux|^GNU$|Android")
