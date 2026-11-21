@@ -17,6 +17,40 @@ public class PojavLauncher {
     private static float currProgress, maxProgress;
 
     public static void main(String[] args) throws Throwable {
+        // Minecraft 26.x diagnostics: make sure any stderr and uncaught exception
+        // ends up in the launcher log (latestlog) instead of being lost.
+        if (System.getProperty("pojav.mc26.core") != null) {
+            System.out.println("[MC26] launcher build: uncaught-file-v2");
+            System.setErr(System.out);
+            Thread.setDefaultUncaughtExceptionHandler((t, th) -> {
+                System.out.println("[MC26] Uncaught exception in " + t.getName() + ": " + th);
+                th.printStackTrace(System.out);
+                System.exit(1);
+            });
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                // Dump every thread stack: the thread that called System.exit(1)
+                // is still visible with its Java frames here.
+                StringBuilder sb = new StringBuilder();
+                sb.append("[MC26] ---- shutdown thread stacks ----\n");
+                for (java.util.Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
+                    sb.append("[MC26/thread] ").append(e.getKey().getName())
+                            .append(" state=").append(e.getKey().getState()).append('\n');
+                    for (StackTraceElement s : e.getValue()) {
+                        sb.append("[MC26/thread]   at ").append(s).append('\n');
+                    }
+                }
+                sb.append("[MC26] ---- end thread stacks ----\n");
+                System.out.print(sb);
+                try {
+                    String home = System.getenv("AME_HOME");
+                    java.io.File dir = new java.io.File(home != null ? home : System.getProperty("user.dir"));
+                    java.nio.file.Files.write(new java.io.File(dir, "mc26-shutdown.txt").toPath(),
+                            sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                } catch (Throwable t) {
+                    System.out.println("[MC26] shutdown dump write failed: " + t);
+                }
+            }, "mc26-shutdown-threads"));
+        }
         // Skip calling to com.apple.eawt.Application.nativeInitializeApplicationDelegate()
         Beans.setDesignTime(true);
         try {
@@ -37,7 +71,23 @@ public class PojavLauncher {
         Thread.currentThread().setUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
 
             public void uncaughtException(Thread t, Throwable th) {
-                th.printStackTrace();
+                // Always write to stdout and to a file: MC may replace System.out
+                // / System.err later, which made the crash invisible in latestlog.
+                java.io.StringWriter sw = new java.io.StringWriter();
+                java.io.PrintWriter pw = new java.io.PrintWriter(sw);
+                pw.println("[MC26] Uncaught exception in " + t.getName() + ": " + th);
+                th.printStackTrace(pw);
+                pw.flush();
+                String text = sw.toString();
+                System.out.print(text);
+                System.out.flush();
+                try {
+                    String home = System.getenv("AME_HOME");
+                    java.io.File dir = new java.io.File(home != null ? home : System.getProperty("user.dir"));
+                    java.nio.file.Files.write(new java.io.File(dir, "mc26-uncaught.txt").toPath(),
+                            text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                } catch (Throwable ignored) {
+                }
                 System.exit(1);
             }
         });

@@ -86,8 +86,14 @@
             uint32_t bundledVer = 5 << 16 | 13 << 8 | 0;
             uint32_t requiredVer = (char)version[0].intValue << 16 | (char)version[1].intValue << 8 | (char)version[2].intValue;
             if (requiredVer > bundledVer) {
-                NSLog(@"[MCDL] Warning: JNA version required by %@ is %@ > 5.13.0, skipping JNA replacement.", json[@"id"], versionStr);
-                continue;
+                if (getPrefBool(@"java.allow_newer_jna")) {
+                    NSLog(@"[MCDL] Warning: JNA version required by %@ is %@ > 5.13.0, keeping the version-specified build (patched native library may not match).", json[@"id"], versionStr);
+                    continue;
+                }
+                // The bundled libjnidispatch.dylib and the Platform class patch are
+                // built for 5.13.0, so a newer jar would be loaded against an older
+                // native library. Keep the bundled version for consistency.
+                NSLog(@"[MCDL] Note: %@ requests JNA %@ > bundled 5.13.0, using bundled 5.13.0 to keep the patched native library matched.", json[@"id"], versionStr);
             }
             library[@"name"] = @"net.java.dev.jna:jna:5.13.0";
             library[@"downloads"][@"artifact"][@"path"] = @"net/java/dev/jna/jna/5.13.0/jna-5.13.0.jar";
@@ -196,6 +202,91 @@
 
     // No idea on handling everything else
     return nil;
+}
+
+#pragma mark - Runtime compatibility
+
+static BOOL AMEVersionAtLeast(NSString *version, int major, int minor) {
+    NSArray<NSString *> *parts = [version componentsSeparatedByString:@"."];
+    int actualMajor = parts.count > 0 ? parts[0].intValue : 0;
+    int actualMinor = parts.count > 1 ? parts[1].intValue : 0;
+    if (actualMajor != major) {
+        return actualMajor > major;
+    }
+    return actualMinor >= minor;
+}
+
++ (NSString *)requiredLWJGLVersionForVersionJSON:(NSDictionary *)json {
+    NSString *lwjglVersion = nil;
+    NSArray *libraries = json[@"libraries"];
+    if (![libraries isKindOfClass:NSArray.class]) {
+        return nil;
+    }
+    for (NSDictionary *library in libraries) {
+        NSString *name = library[@"name"];
+        if (![name isKindOfClass:NSString.class]) {
+            continue;
+        }
+        NSArray<NSString *> *parts = [name componentsSeparatedByString:@":"];
+        if (parts.count < 3 || ![parts[0] isEqualToString:@"org.lwjgl"]) {
+            continue;
+        }
+        // Minecraft 26.x dropped lwjgl-glfw in favour of lwjgl-sdl.
+        if ([parts[1] isEqualToString:@"lwjgl"] || [parts[1] isEqualToString:@"lwjgl-sdl"]) {
+            lwjglVersion = parts[2];
+        }
+    }
+    return lwjglVersion;
+}
+
++ (BOOL)requiresSDLForVersionJSON:(NSDictionary *)json {
+    NSArray *libraries = json[@"libraries"];
+    if (![libraries isKindOfClass:NSArray.class]) {
+        return NO;
+    }
+    for (NSDictionary *library in libraries) {
+        NSString *name = library[@"name"];
+        if ([name isKindOfClass:NSString.class] && [name hasPrefix:@"org.lwjgl:lwjgl-sdl"]) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
++ (NSString *)unsupportedReasonForVersionJSON:(NSDictionary *)json {
+    if (getPrefBool(@"debug.allow_unsupported_versions")) {
+        return nil;
+    }
+
+    NSString *lwjglVersion = [self requiredLWJGLVersionForVersionJSON:json];
+    if (lwjglVersion.length == 0) {
+        return nil;
+    }
+
+    BOOL requiresSDL = [self requiresSDLForVersionJSON:json];
+
+    if (requiresSDL) {
+        // Experimental MC 26.x path: the SDL3 runtime + Amethyst video driver is
+        // bundled under Frameworks/lwjgl343. Allow it when present so the
+        // feature/mc26-native build can be tested on device; regular builds do
+        // not ship that directory and keep refusing the version.
+        NSString *sdlRuntime = [NSBundle.mainBundle.bundlePath stringByAppendingPathComponent:@"Frameworks/lwjgl343/libSDL3.dylib"];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:sdlRuntime]) {
+            return nil;
+        }
+        // Minecraft 26.3+ replaced GLFW with SDL3 (org.lwjgl.sdl).
+        return [NSString stringWithFormat:localize(@"launcher.error.unsupported_version.reason.sdl", nil), lwjglVersion];
+    }
+    if (AMEVersionAtLeast(lwjglVersion, 3, 4)) {
+        // 26.1/26.2 still use GLFW, but newer native libraries are not bundled and
+        // the GLFW bridge of this build is compiled against 3.3.3.
+        return [NSString stringWithFormat:localize(@"launcher.error.unsupported_version.reason.lwjgl", nil), lwjglVersion];
+    }
+    return nil;
+}
+
++ (BOOL)isVersionJSONLaunchable:(NSDictionary *)json {
+    return [self unsupportedReasonForVersionJSON:json] == nil;
 }
 
 @end

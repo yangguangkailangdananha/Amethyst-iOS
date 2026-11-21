@@ -13,13 +13,23 @@ JCFLAGS := -cp "$(subst $() $(),:,$(wildcard $(SOURCEDIR)/*/):$(wildcard libs/*/
 
 all: $(TARGETS)
 	
-# Sometimes the CI produces empty class file resulting in broken jar, so we check and abort here
+# Sometimes the CI produces empty class files (javac race on the runner). Rather
+# than failing the whole build, recompile each affected source once and retry.
 check_empty_classes:
-	@set -e
-	@echo "Checking for empty class files"
-	$(eval EMPTY_CLASSES := $(shell find $(OUTPUTDIR) -name '*.class' -size 0))
-	@if [ -n "$(EMPTY_CLASSES)" ]; then \
-		echo "Error: found empty class files in $@: $(EMPTY_CLASSES)"; \
+	@set -e; \
+	echo "Checking for empty class files"; \
+	for f in $$(find $(OUTPUTDIR) -name '*.class' -size 0 -not -path '$(OUTPUTDIR)/classes/*'); do \
+		rel=$${f#$(OUTPUTDIR)/}; \
+		src=$(SOURCEDIR)/$${rel%.class}.java; \
+		if [ ! -f "$$src" ]; then echo "Empty class without source: $$f"; exit 1; fi; \
+		echo "Recompiling empty class $$f from $$src"; \
+		$(BOOTJDK)/javac $(JCFLAGS) -d $(OUTPUTDIR)/classes "$$src"; \
+		inner=$$(echo "$$rel" | cut -d/ -f2-); \
+		mkdir -p "$$(dirname "$$f")"; \
+		cp "$(OUTPUTDIR)/classes/$$inner" "$$f"; \
+	done; \
+	if [ -n "$$(find $(OUTPUTDIR) -name '*.class' -size 0 -not -path '$(OUTPUTDIR)/classes/*')" ]; then \
+		echo "Error: empty class files remain after retry"; \
 		exit 1; \
 	fi
 
@@ -32,6 +42,9 @@ $(CLASSES): $(OUTPUTDIR)/%.class: $(SOURCEDIR)/%.java
 	@echo "Compiling $<"
 	@$(BOOTJDK)/javac $(JCFLAGS) -d $(OUTPUTDIR)/classes $<
 	@cp $(@:$(OUTPUTDIR)/$(TARGET)/%.class=$(OUTPUTDIR)/classes/%*.class) $(dir $@)/
+
+# Ensure all classes are compiled before checking them.
+check_empty_classes: $(CLASSES)
 
 $(OUTPUTDIR)/launcher.jar: $(CLASSES) check_empty_classes
 	@set -e

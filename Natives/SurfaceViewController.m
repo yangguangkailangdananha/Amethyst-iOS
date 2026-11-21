@@ -426,6 +426,16 @@ static GameSurfaceView* pojavWindow;
 }
 
 - (void)launchMinecraft {
+    NSString *unsupportedReason = [MinecraftResourceUtils unsupportedReasonForVersionJSON:self.metadata];
+    if (unsupportedReason != nil) {
+        // Refuse to start instead of crashing with an unrelated Java stack trace.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            showDialog(localize(@"launcher.error.unsupported_version.title", nil), unsupportedReason);
+            UIKit_returnToSplitView();
+        });
+        return;
+    }
+
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         int minVersion = [self.metadata[@"javaVersion"][@"majorVersion"] intValue];
         if (minVersion == 0) {
@@ -980,6 +990,7 @@ int touchesMovedCount;
 - (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event
 {
     [super touchesBegan:touches withEvent:event];
+    if (getenv("AME_MC26")) NSLog(@"[MC26/input] touchesBegan count=%lu", (unsigned long)touches.count);
     int i = 0;
     for (UITouch *touch in touches) {
         if (touch.type == UITouchTypeIndirectPointer) {

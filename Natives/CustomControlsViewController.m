@@ -53,7 +53,10 @@
 
     // Prepare the navigation bar for safe area customization
     UINavigationItem *navigationItem = [[UINavigationItem alloc] init];
-    UISegmentedControl *segmentedControl = [[UISegmentedControl alloc] initWithItems:@[@"None", @"Default", @"Custom"]];
+    UISegmentedControl *segmentedControl = [[UISegmentedControl alloc] initWithItems:@[
+        localize(@"custom_controls.segment.none", nil),
+        localize(@"custom_controls.segment.default", nil),
+        localize(@"custom_controls.segment.custom", nil)]];
     [segmentedControl addTarget:self action:@selector(changeSafeAreaSelection:) forControlEvents:UIControlEventValueChanged];
     [segmentedControl setEnabled:(insets.left+insets.right)>0 forSegmentAtIndex:1];
     [self loadSafeAreaSelectionFor:segmentedControl];
@@ -264,7 +267,7 @@
         message:exit?localize(@"custom_controls.control_menu.exit.warn", nil):@""
         preferredStyle:UIAlertControllerStyleAlert];
     [controller addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        textField.placeholder = @"Name";
+        textField.placeholder = localize(@"custom_controls.placeholder.name", nil);
         textField.text = self.currentFileName;
         textField.clearButtonMode = UITextFieldViewModeWhileEditing;
         textField.borderStyle = UITextBorderStyleRoundedRect;
@@ -706,7 +709,7 @@ CGFloat currentY;
         [self.editSizeWidth addTarget:self action:@selector(textFieldEditingChanged) forControlEvents:UIControlEventEditingChanged];
         [self.editSizeWidth addTarget:self.editSizeWidth action:@selector(resignFirstResponder) forControlEvents:UIControlEventEditingDidEndOnExit];
         self.editSizeWidth.keyboardType = UIKeyboardTypeDecimalPad;
-        self.editSizeWidth.placeholder = @"width";
+        self.editSizeWidth.placeholder = localize(@"custom_controls.placeholder.width", nil);
         self.editSizeWidth.returnKeyType = UIReturnKeyDone;
         self.editSizeWidth.text = [self.targetButton.properties[@"width"] stringValue];
         self.editSizeWidth.textAlignment = NSTextAlignmentCenter;
@@ -715,7 +718,7 @@ CGFloat currentY;
         [self.editSizeHeight addTarget:self action:@selector(textFieldEditingChanged) forControlEvents:UIControlEventEditingChanged];
         [self.editSizeHeight addTarget:self.editSizeHeight action:@selector(resignFirstResponder) forControlEvents:UIControlEventEditingDidEndOnExit];
         self.editSizeHeight.keyboardType = UIKeyboardTypeDecimalPad;
-        self.editSizeHeight.placeholder = @"height";
+        self.editSizeHeight.placeholder = localize(@"custom_controls.placeholder.height", nil);
         self.editSizeHeight.returnKeyType = UIReturnKeyDone;
         self.editSizeHeight.text = [self.targetButton.properties[@"height"] stringValue];
         self.editSizeHeight.textAlignment = NSTextAlignmentCenter;

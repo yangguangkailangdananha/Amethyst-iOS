@@ -1,0 +1,89 @@
+# Downloads the official LWJGL 3.4.3 macOS-arm64 native modules, rewrites the
+# Mach-O platform to iOS and fixes macOS-style framework paths so the libraries
+# can be bundled with Amethyst-iOS for Minecraft 26.x (SDL3) bring-up.
+name: Prepare LWJGL 3.4.3 iOS libraries
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_ios:
+        description: "Minimum iOS version written into LC_BUILD_VERSION"
+        type: string
+        default: "14.0"
+      sdk_ios:
+        description: "SDK version written into LC_BUILD_VERSION"
+        type: string
+        default: "18.0"
+
+jobs:
+  prepare:
+    runs-on: macos-15-intel
+    timeout-minutes: 40
+
+    steps:
+      - name: Download LWJGL 3.4.3 natives
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/natives" "$RUNNER_TEMP/out"
+          MODULES="lwjgl lwjgl-opengl lwjgl-stb lwjgl-openal lwjgl-freetype lwjgl-shaderc lwjgl-vma lwjgl-tinyfd lwjgl-nanovg lwjgl-spvc lwjgl-jemalloc"
+          for m in $MODULES; do
+            curl -fSL --retry 3 -o "$RUNNER_TEMP/$m.jar" \
+              "https://repo1.maven.org/maven2/org/lwjgl/$m/3.4.3/$m-3.4.3-natives-macos-arm64.jar"
+            unzip -oq "$RUNNER_TEMP/$m.jar" -d "$RUNNER_TEMP/natives"
+          done
+          find "$RUNNER_TEMP/natives" -name '*.dylib' | sort
+
+      - name: Rewrite platform and framework paths
+        env:
+          MIN_IOS: ${{ inputs.min_ios }}
+          SDK_IOS: ${{ inputs.sdk_ios }}
+        run: |
+          set -euo pipefail
+          for f in $(find "$RUNNER_TEMP/natives" -name '*.dylib' ! -name 'libSDL3.dylib'); do
+            name=$(basename "$f")
+            out="$RUNNER_TEMP/out/$name"
+            echo "=== $name"
+            # 1) copy, then rewrite macOS framework paths to iOS style
+            cp "$f" "$out"
+            otool -L "$out" | tail -n +2 | awk '{print $1}' | while read -r dep; do
+              case "$dep" in
+                */Versions/*)
+                  new=$(printf '%s' "$dep" | sed -E 's#/Versions/[A-Za-z0-9_.-]+##')
+                  install_name_tool -change "$dep" "$new" "$out"
+                  echo "   dep: $dep -> $new"
+                  ;;
+              esac
+            done
+            # 2) rewrite LC_BUILD_VERSION platform to iOS (2)
+            vtool -arch arm64 -set-build-version 2 "$MIN_IOS" "$SDK_IOS" -replace -output "$out.tmp" "$out"
+            mv "$out.tmp" "$out"
+            echo "   build: $(vtool -show-build "$out" | tr '\n' ' ')"
+          done
+          # 3) give the 3.4.3 core a unique install name so it can coexist with
+          #    the Pojav 3.3.3 liblwjgl.dylib (Amethyst's GLFW/CallbackBridge)
+          mv "$RUNNER_TEMP/out/liblwjgl.dylib" "$RUNNER_TEMP/out/liblwjgl343.dylib"
+          install_name_tool -id liblwjgl343.dylib "$RUNNER_TEMP/out/liblwjgl343.dylib"
+          echo "   core id: $(otool -D "$RUNNER_TEMP/out/liblwjgl343.dylib" | tail -1)"
+          echo "--- final files ---"
+          ls -la "$RUNNER_TEMP/out"
+
+      - name: Verify JNI exports and architecture
+        run: |
+          set -euo pipefail
+          echo "=== platform check ==="
+          for f in "$RUNNER_TEMP"/out/*.dylib; do
+            printf '%s: ' "$(basename "$f")"
+            vtool -show-build "$f" | grep -E 'platform|minos' | tr '\n' ' '; echo
+          done
+          echo "=== JNI invoke exports in liblwjgl343.dylib ==="
+          nm -gU "$RUNNER_TEMP/out/liblwjgl343.dylib" | grep -c 'JNI_invoke' || true
+          nm -gU "$RUNNER_TEMP/out/liblwjgl343.dylib" | grep 'JNI_invoke' | head -5 || true
+          echo "=== architecture ==="
+          lipo -info "$RUNNER_TEMP/out/liblwjgl343.dylib"
+
+      - name: Upload prepared libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: lwjgl343-ios-libs
+          path: ${{ runner.temp }}/out/*
+          if-no-files-found: error

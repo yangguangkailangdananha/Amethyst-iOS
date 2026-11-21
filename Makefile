@@ -156,9 +156,12 @@ METHOD_PACKAGE = \
 	fi
 
 # Function to download and unpack Java runtimes.
+# Set JRE_NO_DOWNLOAD=1 when the runtimes were provided beforehand (CI extracts
+# them from a nightly IPA); missing runtimes are then simply skipped.
+JRE_NO_DOWNLOAD ?= 0
 METHOD_JAVA_UNPACK = \
 	cd $(SOURCEDIR)/depends; \
-	if [ ! -f "java-$(1)-openjdk/release" ] && [ ! -f "$(ls jre$(1)-*.tar.xz)" ]; then \
+	if [ ! -f "java-$(1)-openjdk/release" ] && [ ! -f "$(ls jre$(1)-*.tar.xz)" ] && [ "$(JRE_NO_DOWNLOAD)" != "1" ]; then \
 		if [ "$(RUNNER)" != "1" ]; then \
 			curl -OJfSL '$(2)'; \
 			unzip jre*-ios-aarch64.zip && rm jre*-ios-aarch64.zip; \
@@ -295,14 +298,15 @@ jre: native
 	cd $(SOURCEDIR); \
 	rm -rf $(SOURCEDIR)/depends/java-*-openjdk/{ASSEMBLY_EXCEPTION,bin,include,jre,legal,LICENSE,man,THIRD_PARTY_README,lib/{ct.sym,jspawnhelper,libjsig.dylib,src.zip,tools.jar}}; \
 	$(call METHOD_DIRCHECK,$(OUTPUTDIR)/java_runtimes); \
-	cp -R $(AME_JRE8_DIR) $(OUTPUTDIR)/java_runtimes; \
-	cp -R $(AME_JRE17_DIR) $(OUTPUTDIR)/java_runtimes; \
-	cp -R $(AME_JRE21_DIR) $(OUTPUTDIR)/java_runtimes; \
-	cp -R $(AME_JRE25_DIR) $(OUTPUTDIR)/java_runtimes; \
-	cp $(WORKINGDIR)/libawt_xawt.dylib $(OUTPUTDIR)/java_runtimes/java-8-openjdk/lib; \
-	cp $(WORKINGDIR)/libawt_xawt.dylib $(OUTPUTDIR)/java_runtimes/java-17-openjdk/lib;
-	cp $(WORKINGDIR)/libawt_xawt.dylib $(OUTPUTDIR)/java_runtimes/java-21-openjdk/lib;
-	cp $(WORKINGDIR)/libawt_xawt.dylib $(OUTPUTDIR)/java_runtimes/java-25-openjdk/lib
+	for v in 8 17 21 25; do \
+		if [ -d "$(SOURCEDIR)/depends/java-$$v-openjdk" ]; then \
+			cp -R "$(SOURCEDIR)/depends/java-$$v-openjdk" "$(OUTPUTDIR)/java_runtimes"; \
+			cp "$(WORKINGDIR)/libawt_xawt.dylib" "$(OUTPUTDIR)/java_runtimes/java-$$v-openjdk/lib"; \
+			echo "Packaged Java $$v runtime"; \
+		else \
+			echo "Warning: Java $$v runtime is not available, skipping"; \
+		fi; \
+	done
 	echo '[Amethyst v$(VERSION)] jre - end'
 
 dep_mg:
@@ -342,6 +346,7 @@ assets:
 payload: native dep_mg java jre assets
 	echo '[Amethyst v$(VERSION)] payload - start'
 	$(call METHOD_DIRCHECK,$(WORKINGDIR)/AngelAuraAmethyst.app/libs)
+	$(call METHOD_DIRCHECK,$(WORKINGDIR)/AngelAuraAmethyst.app/libs343)
 	$(call METHOD_DIRCHECK,$(WORKINGDIR)/AngelAuraAmethyst.app/libs_caciocavallo)
 	$(call METHOD_DIRCHECK,$(WORKINGDIR)/AngelAuraAmethyst.app/libs_caciocavallo17)
 	cp -R $(SOURCEDIR)/Natives/resources/en.lproj/LaunchScreen.storyboardc $(WORKINGDIR)/AngelAuraAmethyst.app/Base.lproj/ || exit 1
@@ -349,6 +354,7 @@ payload: native dep_mg java jre assets
 	cp $(WORKINGDIR)/*.dylib $(WORKINGDIR)/AngelAuraAmethyst.app/Frameworks/ || exit 1
 	cp -R $(SOURCEDIR)/JavaApp/libs/others/* $(WORKINGDIR)/AngelAuraAmethyst.app/libs/ || exit 1
 	cp $(SOURCEDIR)/JavaApp/build/*.jar $(WORKINGDIR)/AngelAuraAmethyst.app/libs/ || exit 1
+	cp -R $(SOURCEDIR)/JavaApp/libs343/* $(WORKINGDIR)/AngelAuraAmethyst.app/libs343/ || exit 1
 	cp -R $(SOURCEDIR)/JavaApp/libs/caciocavallo/* $(WORKINGDIR)/AngelAuraAmethyst.app/libs_caciocavallo || exit 1
 	cp -R $(SOURCEDIR)/JavaApp/libs/caciocavallo17/* $(WORKINGDIR)/AngelAuraAmethyst.app/libs_caciocavallo17 || exit 1
 	$(call METHOD_DIRCHECK,$(OUTPUTDIR)/Payload)

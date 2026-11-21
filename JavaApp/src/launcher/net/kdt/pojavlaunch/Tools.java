@@ -70,10 +70,335 @@ public final class Tools {
                 loader.addURL(new File(s).toURI().toURL());
             }
         }
-            
+
+        // Minecraft 26.x uses SDL3 through LWJGL 3.4.3. The 3.4.3 Java classes
+        // must pair with the 3.4.3 native core, otherwise LWJGL aborts with
+        // "Incompatible Java and native library versions".
+        String mc26Core = System.getProperty("pojav.mc26.core");
+        if (mc26Core != null) {
+            // Load the matching 3.4.3 core first.
+            System.load(mc26Core);
+            System.out.println("[MC26] Loaded LWJGL 3.4.3 core: " + mc26Core);
+            // Initialize the 3.4.3 JNI/Library machinery before adding the
+            // legacy 3.3.3 core, so LWJGL's hash/version checks see 3.4.3.
+            try {
+                Class.forName("org.lwjgl.system.JNI", true, ClassLoader.getSystemClassLoader());
+                System.out.println("[MC26] LWJGL 3.4.3 JNI/Library initialized");
+            } catch (Throwable t) {
+                System.out.println("[MC26] LWJGL 3.4.3 JNI init failed: " + t);
+            }
+            // Now add the bundled 3.3.3 core for Amethyst's GLFW/CallbackBridge
+            // JNI symbols (launcher input/clipboard paths).
+            String legacyCore = System.getProperty("pojav.mc26.legacyCore");
+            if (legacyCore != null) {
+                System.load(legacyCore);
+                System.out.println("[MC26] Loaded legacy LWJGL 3.3.3 core: " + legacyCore);
+            }
+            System.out.println("[MC26] org.lwjgl.librarypath=" + System.getProperty("org.lwjgl.librarypath"));
+            logClassOrigin("org.lwjgl.system.JNI");
+            logClassOrigin("org.lwjgl.sdl.SDL");
+            logClassOrigin("org.lwjgl.sdl.SDLVideo");
+            logClassOrigin("org.lwjgl.vulkan.VK");
+        }
+
+        if (mc26Core != null) {
+            System.out.println("[MC26] user.dir=" + System.getProperty("user.dir")
+                    + " GAME_DIR=" + System.getenv("GAME_DIR")
+                    + " AME_HOME=" + System.getenv("AME_HOME"));
+            installMc26ExceptionLogger();
+            ensureMc26Jna(loader);
+            // Show the previous run's log/crash report before launching: an early
+            // crash may not give the JVM a chance to run shutdown hooks.
+            dumpPreviousMc26Run();
+            // Stream Minecraft's own log into the launcher log while it runs,
+            // so early crashes are visible even if the JVM cannot run hooks.
+            startMc26GameLogTailer();
+            // Dump Minecraft's own log/crash report into the launcher log when
+            // the game exits (System.exit also runs shutdown hooks).
+            Runtime.getRuntime().addShutdownHook(new Thread(Tools::dumpMc26GameLog, "mc26-game-log-dump"));
+        }
+
         Class<?> clazz = loader.loadClass(versionInfo.mainClass);
         Method method = clazz.getMethod("main", String[].class);
-        method.invoke(null, new Object[]{launchArgs});
+        try {
+            method.invoke(null, new Object[]{launchArgs});
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            System.out.println("[MC26] Minecraft main threw: " + cause);
+            if (cause != null) {
+                cause.printStackTrace(System.out);
+            }
+            throw e;
+        }
+    }
+
+    private static void logClassOrigin(String className) {
+        try {
+            // initialize=false: never trigger LWJGL module/NativeLoader side effects here.
+            Class<?> clazz = Class.forName(className, false, ClassLoader.getSystemClassLoader());
+            java.security.CodeSource source = clazz.getProtectionDomain().getCodeSource();
+            System.out.println("[MC26] " + className + " <- " + (source != null ? source.getLocation() : "bootstrap"));
+        } catch (Throwable t) {
+            System.out.println("[MC26] " + className + " MISSING: " + t);
+        }
+    }
+
+    private static List<File> mc26LogDirs() {
+        List<File> dirs = new ArrayList<>();
+        dirs.add(new File(System.getProperty("user.dir")));
+        if (System.getenv("AME_HOME") != null) dirs.add(new File(System.getenv("AME_HOME")));
+        if (System.getenv("GAME_DIR") != null) dirs.add(new File(System.getenv("GAME_DIR")));
+        String tmp = System.getProperty("java.io.tmpdir");
+        if (tmp != null) dirs.add(new File(tmp));
+        return dirs;
+    }
+
+    private static void ensureMc26Jna(ClassLoader loader) {
+        try {
+            File bundle = new File(System.getenv("BUNDLE_PATH") != null ? System.getenv("BUNDLE_PATH") : ".");
+            File srcDir = new File(bundle, "libs343");
+            File[][] pairs = {
+                {new File(DIR_GAME_NEW, "libraries/net/java/dev/jna/jna/5.17.0/jna-5.17.0.jar"),
+                 new File(srcDir, "jna-5.17.0.jar")},
+                {new File(DIR_GAME_NEW, "libraries/net/java/dev/jna/jna-platform/5.17.0/jna-platform-5.17.0.jar"),
+                 new File(srcDir, "jna-platform-5.17.0.jar")},
+            };
+            for (File[] pair : pairs) {
+                File dest = pair[0];
+                File src = pair[1];
+                if (!dest.isFile() && src.isFile()) {
+                    dest.getParentFile().mkdirs();
+                    java.nio.file.Files.copy(src.toPath(), dest.toPath(),
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    System.out.println("[MC26] copied " + dest);
+                }
+                if (dest.isFile() && loader instanceof PojavClassLoader) {
+                    ((PojavClassLoader) loader).addURL(dest.toURI().toURL());
+                    System.out.println("[MC26] classpath += " + dest);
+                }
+            }
+        } catch (Throwable t) {
+            System.out.println("[MC26] JNA 5.17 setup failed: " + t);
+        }
+    }
+
+    private static void writeMc26Log(File dir, String name, String text) {
+        try {
+            if (!dir.isDirectory()) dir.mkdirs();
+            java.nio.file.Files.write(new File(dir, name).toPath(),
+                    text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            System.out.println("[MC26] wrote " + new File(dir, name));
+        } catch (Throwable t) {
+            System.out.println("[MC26] write " + new File(dir, name) + " failed: " + t);
+        }
+    }
+
+    private static void installMc26ExceptionLogger() {
+        Thread.UncaughtExceptionHandler handler = (t, th) -> {
+            java.io.StringWriter sw = new java.io.StringWriter();
+            java.io.PrintWriter pw = new java.io.PrintWriter(sw);
+            pw.println("[MC26] Uncaught exception in " + t.getName() + ": " + th);
+            th.printStackTrace(pw);
+            pw.flush();
+            String text = sw.toString();
+            System.out.print(text);
+            System.out.flush();
+            for (File dir : mc26LogDirs()) {
+                writeMc26Log(dir, "mc26-uncaught.txt", text);
+            }
+            System.exit(1);
+        };
+        Thread.setDefaultUncaughtExceptionHandler(handler);
+        Thread.currentThread().setUncaughtExceptionHandler(handler);
+        System.out.println("[MC26] exception logger installed");
+    }
+
+    private static void dumpPreviousMc26Run() {
+        try {
+            List<File> dirs = new ArrayList<>();
+            dirs.add(new File(DIR_GAME_PROFILE));
+            if (System.getenv("GAME_DIR") != null) {
+                dirs.add(new File(System.getenv("GAME_DIR")));
+            }
+            if (System.getenv("AME_HOME") != null) {
+                dirs.add(new File(System.getenv("AME_HOME")));
+            }
+            System.out.println("[MC26] user.dir=" + System.getProperty("user.dir")
+                    + " GAME_DIR=" + System.getenv("GAME_DIR")
+                    + " AME_HOME=" + System.getenv("AME_HOME"));
+            String home = System.getenv("AME_HOME") != null ? System.getenv("AME_HOME") : DIR_GAME_PROFILE;
+            File shutdownFile = new File(home, "mc26-shutdown.txt");
+            if (shutdownFile.isFile()) {
+                System.out.println("[MC26] ---- previous shutdown dump: " + shutdownFile + " ----");
+                List<String> lines = java.nio.file.Files.readAllLines(shutdownFile.toPath(), java.nio.charset.StandardCharsets.UTF_8);
+                for (int i = 0; i < Math.min(400, lines.size()); i++) {
+                    System.out.println("[MC26/prev-shutdown] " + lines.get(i));
+                }
+            }
+            File homeDir = new File(home);
+            System.out.println("[MC26] home=" + homeDir.getAbsolutePath()
+                    + " files=" + Arrays.toString(homeDir.list()));
+            for (File dir : mc26LogDirs()) {
+                File uncaughtFile = new File(dir, "mc26-uncaught.txt");
+                if (uncaughtFile.isFile()) {
+                    System.out.println("[MC26] ---- previous uncaught exception: " + uncaughtFile + " ----");
+                    List<String> lines = java.nio.file.Files.readAllLines(uncaughtFile.toPath(), java.nio.charset.StandardCharsets.UTF_8);
+                    for (int i = 0; i < Math.min(200, lines.size()); i++) {
+                        System.out.println("[MC26/prev-uncaught] " + lines.get(i));
+                    }
+                }
+            }
+            File sdlLog = new File(home, "mc26_sdl.log");
+            if (sdlLog.isFile()) {
+                System.out.println("[MC26] ---- previous SDL driver log ----");
+                List<String> lines = java.nio.file.Files.readAllLines(sdlLog.toPath(), java.nio.charset.StandardCharsets.UTF_8);
+                int start = Math.max(0, lines.size() - 200);
+                for (int i = start; i < lines.size(); i++) {
+                    System.out.println("[MC26/prev-sdl] " + lines.get(i));
+                }
+            }
+            for (File dir : dirs) {
+                File log = new File(dir, "logs/latest.log");
+                File crashDir = new File(dir, "crash-reports");
+                System.out.println("[MC26] scan " + dir.getAbsolutePath()
+                        + " dir=" + dir.isDirectory() + " log=" + log.isFile()
+                        + " crashDir=" + crashDir.isDirectory());
+                if (log.isFile()) {
+                    System.out.println("[MC26] ---- previous latest.log tail: " + log + " ----");
+                    List<String> lines = java.nio.file.Files.readAllLines(log.toPath(), java.nio.charset.StandardCharsets.UTF_8);
+                    int start = Math.max(0, lines.size() - 120);
+                    for (int i = start; i < lines.size(); i++) {
+                        System.out.println("[MC26/prev-log] " + lines.get(i));
+                    }
+                }
+                File[] crashes = crashDir.listFiles();
+                if (crashes != null && crashes.length > 0) {
+                    Arrays.sort(crashes, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+                    System.out.println("[MC26] ---- previous crash report: " + crashes[0] + " ----");
+                    List<String> lines = java.nio.file.Files.readAllLines(crashes[0].toPath(), java.nio.charset.StandardCharsets.UTF_8);
+                    for (int i = 0; i < Math.min(300, lines.size()); i++) {
+                        System.out.println("[MC26/prev-crash] " + lines.get(i));
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            System.out.println("[MC26] previous run dump failed: " + t);
+            t.printStackTrace(System.out);
+        }
+    }
+
+    private static void startMc26GameLogTailer() {
+        Thread tailer = new Thread(() -> {
+            File log = new File(DIR_GAME_PROFILE, "logs/latest.log");
+            System.out.println("[MC26] log tailer watching " + log.getAbsolutePath());
+            int printed = 0;
+            boolean missingPrinted = false;
+            while (true) {
+                try {
+                    if (log.isFile()) {
+                        if (missingPrinted) {
+                            System.out.println("[MC26] game log appeared");
+                            missingPrinted = false;
+                        }
+                        List<String> lines = java.nio.file.Files.readAllLines(
+                                log.toPath(), java.nio.charset.StandardCharsets.UTF_8);
+                        if (lines.size() < printed) {
+                            printed = 0;
+                        }
+                        for (; printed < lines.size(); printed++) {
+                            System.out.println("[MC26/live] " + lines.get(printed));
+                        }
+                    } else if (!missingPrinted) {
+                        System.out.println("[MC26] game log not created yet: " + log);
+                        missingPrinted = true;
+                    }
+                    Thread.sleep(500);
+                } catch (Throwable t) {
+                    System.out.println("[MC26] log tailer error: " + t);
+                    try {
+                        Thread.sleep(2000);
+                    } catch (InterruptedException ignored) {
+                    }
+                }
+            }
+        }, "mc26-log-tailer");
+        tailer.setDaemon(true);
+        tailer.start();
+    }
+
+    private static void dumpMc26GameLog() {
+        try {
+            File log = new File(DIR_GAME_PROFILE, "logs/latest.log");
+            if (log.isFile()) {
+                System.out.println("[MC26] ---- game latest.log tail ----");
+                List<String> lines = java.nio.file.Files.readAllLines(log.toPath(), java.nio.charset.StandardCharsets.UTF_8);
+                int start = Math.max(0, lines.size() - 250);
+                for (int i = start; i < lines.size(); i++) {
+                    System.out.println("[MC26/log] " + lines.get(i));
+                }
+                System.out.println("[MC26] ---- end game log ----");
+            } else {
+                System.out.println("[MC26] no game log at " + log);
+            }
+            File crashDir = new File(DIR_GAME_PROFILE, "crash-reports");
+            File[] crashes = crashDir.listFiles();
+            if (crashes != null && crashes.length > 0) {
+                Arrays.sort(crashes, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+                System.out.println("[MC26] ---- crash report: " + crashes[0].getName() + " ----");
+                List<String> lines = java.nio.file.Files.readAllLines(crashes[0].toPath(), java.nio.charset.StandardCharsets.UTF_8);
+                for (int i = 0; i < Math.min(400, lines.size()); i++) {
+                    System.out.println("[MC26/crash] " + lines.get(i));
+                }
+                System.out.println("[MC26] ---- end crash report ----");
+            }
+        } catch (Throwable t) {
+            System.out.println("[MC26] game log dump failed: " + t);
+        }
+    }
+
+    // Minecraft expects a value for every option that follows it. Offline (local)
+    // accounts have no XUID/client ID, so an empty substitution would leave a
+    // dangling "--xuid" / "--clientId" option and make the argument parser of
+    // modern versions fail before the game even starts. Empty values are replaced
+    // with a placeholder which is then dropped together with its option.
+    private static final String EMPTY_ARG_PLACEHOLDER = "__AME_EMPTY_ARG__";
+    private static final String[] VALUE_OPTIONS = {
+        "--xuid", "--clientId", "--accessToken", "--uuid", "--username",
+        "--version", "--gameDir", "--assetsDir", "--assetIndex", "--versionType",
+        "--userType", "--userProperties", "--width", "--height"
+    };
+
+    private static boolean isValueOption(String arg) {
+        for (String option : VALUE_OPTIONS) {
+            if (option.equals(arg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String emptyToPlaceholder(String value) {
+        return (value == null || value.length() == 0) ? EMPTY_ARG_PLACEHOLDER : value;
+    }
+
+    // Local (offline) accounts have no XUID. Older builds stored the placeholder
+    // "0" for them, so both null and "0" mean "not an Xbox Live account".
+    private static boolean hasXuid(MinecraftAccount profile) {
+        return profile.xuid != null && profile.xuid.length() > 0 && !profile.xuid.equals("0");
+    }
+
+    private static String[] dropEmptyValueOptions(String[] args) {
+        List<String> result = new ArrayList<String>();
+        for (String arg : args) {
+            if (EMPTY_ARG_PLACEHOLDER.equals(arg)) {
+                if (result.size() > 0 && isValueOption(result.get(result.size() - 1))) {
+                    result.remove(result.size() - 1);
+                }
+                continue;
+            }
+            result.add(arg);
+        }
+        return result.toArray(new String[0]);
     }
 
     public static String[] getMinecraftArgs(MinecraftAccount profile, JMinecraftVersionList.Version versionInfo) {
@@ -88,13 +413,13 @@ public final class Tools {
 
         Map<String, String> varArgMap = new ArrayMap<String, String>();
         varArgMap.put("auth_session", profile.accessToken); // For legacy versions of MC
-        varArgMap.put("auth_access_token", profile.accessToken);
+        varArgMap.put("auth_access_token", emptyToPlaceholder(profile.accessToken));
         varArgMap.put("auth_player_name", username);
         varArgMap.put("auth_uuid", profile.profileId.replace("-", ""));
-        varArgMap.put("auth_xuid", profile.xuid);
+        varArgMap.put("auth_xuid", hasXuid(profile) ? profile.xuid : EMPTY_ARG_PLACEHOLDER);
         varArgMap.put("assets_root", Tools.ASSETS_PATH);
         varArgMap.put("assets_index_name", versionInfo.assets);
-        varArgMap.put("clientid", profile.clientToken);
+        varArgMap.put("clientid", emptyToPlaceholder(profile.clientToken));
         varArgMap.put("game_assets", Tools.ASSETS_PATH);
         varArgMap.put("game_directory", gameDir.getAbsolutePath());
         varArgMap.put("user_properties", "{}");
@@ -110,7 +435,10 @@ public final class Tools {
                 if (arg instanceof String) {
                     minecraftArgs.add((String) arg);
                     if (arg.equals("--xuid")) {
-                        varArgMap.put("user_type", "msa");
+                        // Only online (Microsoft) accounts carry an XUID.
+                        if (hasXuid(profile)) {
+                            varArgMap.put("user_type", "msa");
+                        }
                     }
                 } else {
                     /*
@@ -138,7 +466,7 @@ public final class Tools {
             ), varArgMap
         );
         // Tools.dialogOnUiThread(this, "Result args", Arrays.asList(argsFromJson).toString());
-        return argsFromJson;
+        return dropEmptyValueOptions(argsFromJson);
     }
 
     public static String fromStringArray(String[] strArr) {

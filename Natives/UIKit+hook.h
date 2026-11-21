@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#include <dlfcn.h>
 
 #define realUIIdiom UIDevice.currentDevice.userInterfaceIdiom
 extern NSNotificationName UIPresentationControllerPresentationTransitionWillBeginNotification;
@@ -20,10 +21,23 @@ extern NSNotificationName UIPresentationControllerPresentationTransitionWillBegi
 @end
 
 // private functions
-extern BOOL _UISolariumEnabled(void) __attribute__((weak_import));
+// The symbol only exists in the iOS 26+ UIKit. Resolve it lazily with dlsym so
+// the app still links when built against an older iPhoneOS SDK.
+static inline BOOL (*_UISolariumEnabledPointer(void))(void) {
+    static BOOL (*symbol)(void);
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        symbol = (BOOL (*)(void))dlsym(RTLD_DEFAULT, "_UISolariumEnabled");
+    });
+    return symbol;
+}
+#define _UISolariumEnabled _UISolariumEnabledPointer()
 
 @interface UIBarButtonItem(private)
 - (UIView *)view;
+// Introduced with the iOS 26 SDK. Declared here so the code also compiles with
+// older SDKs (the call site is guarded by @available(iOS 19.0, *)).
+@property(nonatomic) BOOL sharesBackground;
 @end
 
 @interface UIContextMenuInteraction(private)

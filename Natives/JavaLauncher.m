@@ -9,7 +9,19 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+// The JIT (TXM) workarounds below use Mach exception/task APIs. Newer Xcode
+// toolchains reject implicit function declarations, so the headers must be
+// included explicitly instead of relying on transitive includes.
+#include <mach/mach.h>
+#include <mach/mach_init.h>
+#include <mach/exception_types.h>
+#include <mach/task.h>
+#include <mach/thread_act.h>
+#include <mach/thread_status.h>
+#include <mach/machine/thread_status.h>
+
 #include "utils.h"
+#import "MinecraftResourceUtils.h"
 
 #import "ios_uikit_bridge.h"
 #import "JavaLauncher.h"
@@ -183,6 +195,19 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
         gameDir = @(getenv("GAME_DIR"));
         launchJar = YES;
     }
+
+    // Minecraft 26.3+ switched from GLFW to SDL3 (org.lwjgl.sdl), which uses
+    // LWJGL 3.4.x. The app ships the official 3.4.3 jars and iOS native modules
+    // separately (libs343 / Frameworks/lwjgl343) so that older versions keep
+    // using the bundled 3.3.3 build with Amethyst's GLFW bridge.
+    // Versions using LWJGL 3.4.x with GLFW (26.1/26.2) must NOT take this path.
+    BOOL mc26 = NO;
+    if ([launchTarget isKindOfClass:NSDictionary.class]) {
+        mc26 = [MinecraftResourceUtils requiresSDLForVersionJSON:launchTarget];
+        NSString *lwjglVersion = [MinecraftResourceUtils requiredLWJGLVersionForVersionJSON:launchTarget];
+        NSLog(@"[JavaLauncher] MC 26.x (SDL3) path: %@ (detected LWJGL %@, requiresSDL %d)",
+              mc26 ? @"YES" : @"NO", lwjglVersion ?: @"unknown", mc26);
+    }
     NSLog(@"[JavaLauncher] Looking for Java %d or later", minVersion);
     NSString *javaHome = getSelectedJavaHome(defaultJRETag, minVersion);
 
@@ -247,6 +272,27 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     margv[++margc] = "-Dorg.lwjgl.system.allocator=system";
     //margv[++margc] = "-Dorg.lwjgl.util.NoChecks=true";
     margv[++margc] = "-Dlog4j2.formatMsgNoLookups=true";
+
+    if (mc26) {
+        NSString *lwjgl343Path = [NSString stringWithFormat:@"%@/Frameworks/lwjgl343", NSBundle.mainBundle.bundlePath];
+        NSString *frameworksPath = [NSString stringWithFormat:@"%@/Frameworks", NSBundle.mainBundle.bundlePath];
+        // Tell the native input bridge to mirror events into SDL3.
+        setenv("AME_MC26", "1", 1);
+        // SDL3 + the 3.4.3 module natives live in lwjgl343; the shared iOS
+        // libraries (MoltenVK, OpenAL, freetype) stay in Frameworks.
+        margv[++margc] = [NSString stringWithFormat:@"-Dorg.lwjgl.librarypath=%@:%@", lwjgl343Path, frameworksPath].UTF8String;
+        // Loaded explicitly from Java (Tools) so the JNI invoke* symbols are
+        // registered before the SDL bindings are used. `liblwjgl.dylib` is the
+        // 3.4.3 core (same file as liblwjgl343.dylib) so LWJGL's own loader
+        // resolves the matching native instead of the bundled 3.3.3 build.
+        margv[++margc] = [NSString stringWithFormat:@"-Dpojav.mc26.core=%@/liblwjgl.dylib", lwjgl343Path].UTF8String;
+        // The bundled 3.3.3 core still provides Amethyst's GLFW/CallbackBridge
+        // JNI symbols used by the launcher; native code loads it on demand.
+        margv[++margc] = [NSString stringWithFormat:@"-Dpojav.mc26.legacyCore=%@/liblwjgl.dylib", frameworksPath].UTF8String;
+        // Verbose LWJGL loader logs help diagnose the 26.x bring-up on device.
+        margv[++margc] = "-Dorg.lwjgl.util.Debug=true";
+        margv[++margc] = "-Dorg.lwjgl.util.DebugLoader=true";
+    }
 
     // Preset OpenGL libname
     const char *glLibName = getenv("RENDERER");
@@ -359,6 +405,12 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     NSLog(@"[Init] Found JLI lib");
 
     NSString *classpath = [NSString stringWithFormat:@"%@/*", librariesPath];
+    if (mc26) {
+        // Official LWJGL 3.4.3 jars first (they have no org.lwjgl.glfw, so the
+        // custom GLFW/CallbackBridge in libs/lwjgl.jar is still used), then the
+        // regular launcher classpath.
+        classpath = [NSString stringWithFormat:@"%@/libs343/*:%@", NSBundle.mainBundle.bundlePath, classpath];
+    }
     if (launchJar) {
         classpath = [classpath stringByAppendingFormat:@":%@", launchTarget];
     }
@@ -387,6 +439,14 @@ int launchJVM(NSString *username, id launchTarget, int width, int height, int mi
     }
 
     NSLog(@"[Init] Calling JLI_Launch");
+
+    // The launcher log view redirects fd 1 after the native hooks were
+    // installed; route native stderr (JVM, log4j, SDL) to the same file now.
+    dup2(STDOUT_FILENO, STDERR_FILENO);
+    setvbuf(stdout, NULL, _IONBF, 0);
+
+    extern void Amethyst_LogSDLDrivers(void);
+    Amethyst_LogSDLDrivers();
 
     // Cr4shed known issue: exit after crash dump,
     // reset signal handler so that JVM can catch them

@@ -112,8 +112,8 @@
 "login.warn.title.demomode" = "Your account is Demo";
 "login.warn.message.demomode" = "As a replacement to offline and local mode, demo mode will allow you to sign into a Microsoft account that does not own the game and play the Java Edition trial, introduced in 1.3.1 and newer versions. Older versions contain the full game, as the official launcher does not place these restrictions. See our website to learn more about this transition from offline mode.";
 
-"login.warn.title.localmode" = "Offline mode is now Local mode.";
-"login.warn.message.localmode" = "You can continue to play installed versions, but you can no longer download Minecraft without a paid account. No support will be provided for issues with local accounts, or other means of acquiring Minecraft.";
+"login.warn.title.localmode" = "Offline accounts are supported";
+"login.warn.message.localmode" = "Local (offline) accounts can download, install and play Minecraft just like an online account. Singleplayer and offline-mode servers work normally; online-mode servers still require a Microsoft account that owns the game. No official support is provided for local accounts.";
 
 "login.msa.error.xsts.noxboxacc" = "An Xbox profile is not registered for this Microsoft account. Please make sure that you have made an Xbox profile.\nError code: 2148916233";
 "login.msa.error.xsts.noxbox" = "Xbox Live is currently unavailable in your country.\nError code: 2148916235";
@@ -332,3 +332,93 @@
 "controller_configurator.section.footer.menu_mappings" = "Bindings when the mouse is not locked, such as on the title screen or in the pause menu.";
 "controller_configurator.section.controller_style" = "Controller type";
 "controller_configurator.section.footer.controller_style" = "Show different controller button names in this configurator.";
+
+/* Mod management */
+
+"launcher.menu.mods" = "Mods";
+
+"mods.title" = "Mods";
+"mods.section.actions" = "Add mods";
+"mods.section.installed" = "Installed mods (%ld)";
+"mods.empty" = "No mods installed yet. Create a Fabric/Quilt/Forge profile first, then import mods from this device or browse a mod site.";
+"mods.warning.vanilla" = "This profile has no mod loader, so Minecraft will ignore these mods. Create a Fabric/Quilt/Forge profile to use them.";
+"mods.action.import" = "Import from this device";
+"mods.action.browse" = "Browse mod sites";
+"mods.action.url" = "Install from a link";
+"mods.action.url.message" = "Paste a direct download link to a mod .jar file.";
+"mods.action.open_folder" = "Open mods folder";
+"mods.action.enable" = "Enable";
+"mods.action.disable" = "Disable";
+"mods.action.delete" = "Delete";
+"mods.status.disabled" = "Disabled";
+"mods.import.success" = "Imported %ld file(s).";
+"mods.install.success" = "Mod installed";
+"mods.download.progress" = "Downloading mod…";
+"mods.error.invalid_url" = "Please enter a valid download link.";
+"mods.browse.title" = "Browse mods";
+"mods.browse.search" = "Search mods";
+"mods.browse.strict" = "Match this profile";
+"mods.browse.all_versions" = "All versions";
+"mods.browse.filter" = "Filter";
+"mods.browse.versions" = "Choose a version";
+"mods.browse.empty" = "No mods found. Try another search, or switch the filter to All versions.";
+"mods.curseforge.key.title" = "CurseForge API key";
+"mods.error.bad_url" = "The download link is not a valid URL.";
+"mods.error.checksum" = "Checksum mismatch, the downloaded file was removed.";
+"mods.error.copy_failed" = "Unable to copy the mod file.";
+"mods.error.curseforge_key" = "CurseForge needs a personal API key. Get one for free at console.curseforge.com and paste it here.";
+"mods.error.extract_failed" = "Failed to extract %@";
+"mods.error.missing_project" = "Missing project id.";
+"mods.error.mod_missing" = "The mod file no longer exists.";
+"mods.error.no_jars" = "The archive does not contain any .jar mod files.";
+"mods.error.unsupported_file" = "Unsupported file type \".%@\". Use a .jar mod, or a .zip/.mrpack archive that contains mod jars.";
+
+/* Strings that used to be hard-coded in the UI */
+
+"profile.create.vanilla" = "Vanilla";
+"profile.create.fabric_quilt" = "Fabric/Quilt";
+"profile.create.forge" = "Forge";
+"profile.create.modpack" = "Modpack";
+"launcher.version.placeholder" = "Specify version…";
+"launcher.forge.search_placeholder" = "Search versions";
+"launcher.forge.download_cancelled.title" = "Download Cancelled";
+"launcher.forge.download_cancelled.message" = "The download has been cancelled.";
+"launcher.forge.download_complete.title" = "Download Complete";
+"launcher.forge.download_complete.message" = "%@ installer will now run. After installation completes, you will need to restart the app.";
+"launcher.forge.error_loading.title" = "Error Loading Versions";
+"custom_controls.segment.none" = "None";
+"custom_controls.segment.default" = "Default";
+"custom_controls.segment.custom" = "Custom";
+"custom_controls.placeholder.name" = "Name";
+"custom_controls.placeholder.width" = "width";
+"custom_controls.placeholder.height" = "height";
+"common.error_saving_file" = "Error while saving file";
+
+/* Runtime compatibility */
+
+"preference.title.allow_unsupported_versions" = "Allow unsupported versions";
+"preference.detail.allow_unsupported_versions" = "Let versions that need LWJGL 3.4+/SDL3 start anyway. They will crash unless a matching runtime pack is bundled, so leave this off unless you are testing.";
+"launcher.error.unsupported_version.title" = "This Minecraft version cannot run yet";
+"launcher.error.unsupported_version.reason.sdl" = "This version needs LWJGL %@ with the SDL3 backend (org.lwjgl.sdl), which replaces the GLFW window/input layer this build is based on. Minecraft 1.21.11 and older work. Advanced users can enable \"Allow unsupported versions\" in the debug preferences to try anyway.";
+"launcher.error.unsupported_version.reason.lwjgl" = "This version needs LWJGL %@ native libraries, but this build bundles LWJGL 3.3.3. Minecraft 1.21.11 and older work. Advanced users can enable \"Allow unsupported versions\" in the debug preferences to try anyway.";
+
+
+/* In-app updater */
+"update.title" = "Update";
+"update.current" = "Current version: %@";
+"update.idle" = "Check for the latest published build.";
+"update.check" = "Check for updates";
+"update.download" = "Download update";
+"update.hint" = "The installer is saved to Documents/Updates. Installing hands off to TrollStore (apple-magnifier://install), or you can share the file with another installer.";
+"update.checking" = "Checking for updates...";
+"update.none" = "No releases have been published yet.";
+"update.latest" = "You are running the latest version (%@).";
+"update.available" = "Version %@ is available: %@";
+"update.noasset" = "This release does not contain an IPA/TIPA asset.";
+"update.downloading" = "Downloading %@...";
+"update.downloaded" = "Downloaded %@";
+"update.install_title" = "Install update";
+"update.install_message" = "Install with TrollStore, or share the downloaded file with another installer.";
+"update.install_trollstore" = "Install with TrollStore";
+"update.share_file" = "Share downloaded file";
+"update.error" = "Update failed: %@";

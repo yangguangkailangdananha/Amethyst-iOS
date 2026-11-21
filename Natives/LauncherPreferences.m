@@ -102,19 +102,32 @@ NSString* getSelectedJavaHome(NSString* defaultJRETag, int minVersion) {
     NSDictionary *pref = getPrefObject(@"java.java_homes");
     NSDictionary<NSString *, NSString *> *selected = pref[@"0"];
     NSString *selectedVer = selected[defaultJRETag];
-    if (minVersion > selectedVer.intValue) {
-        NSArray *sortedVersions = [pref.allKeys valueForKeyPath:@"self.integerValue"];
-        sortedVersions = [sortedVersions sortedArrayUsingSelector:@selector(compare:)];
+
+    if (minVersion > 0 && minVersion > selectedVer.intValue) {
+        // Collect the major versions of every installed runtime. The "0" entry is
+        // the default mapping and must not be treated as a runtime itself.
+        NSMutableArray<NSNumber *> *sortedVersions = [NSMutableArray new];
+        for (NSString *key in pref.allKeys) {
+            if (key.integerValue > 0 && [pref[key] isKindOfClass:NSString.class]) {
+                [sortedVersions addObject:@(key.integerValue)];
+            }
+        }
+        [sortedVersions sortUsingSelector:@selector(compare:)];
+        selectedVer = nil;
         for (NSNumber *version in sortedVersions) {
             if (version.intValue >= minVersion) {
                 selectedVer = version.stringValue;
                 break;
             }
         }
-        if (!selectedVer) {
-            NSLog(@"Error: requested Java >= %d was not installed!", minVersion);
+        if (selectedVer == nil) {
+            // Do not silently fall back to a too old runtime: the game would crash
+            // with an unrelated error instead of telling the user what is missing.
+            NSLog(@"[JavaLauncher] Error: requested Java >= %d was not installed!", minVersion);
             return nil;
         }
+    } else if (selectedVer == nil) {
+        selectedVer = @"8";
     }
 
     id selectedDir = pref[selectedVer];

@@ -48,7 +48,7 @@ typedef NS_ENUM(NSUInteger, LauncherProfilesTableSection) {
     options:UIMenuOptionsDisplayInline
     children:@[
         [UIAction
-            actionWithTitle:@"Vanilla" image:nil
+            actionWithTitle:localize(@"profile.create.vanilla", nil) image:nil
             identifier:@"vanilla" handler:^(UIAction *action) {
                 [self actionEditProfile:@{
                     @"name": @"",
@@ -60,17 +60,17 @@ typedef NS_ENUM(NSUInteger, LauncherProfilesTableSection) {
             identifier:@"optifine" handler:createHandler],
 #endif
         [UIAction
-            actionWithTitle:@"Fabric/Quilt" image:nil
+            actionWithTitle:localize(@"profile.create.fabric_quilt", nil) image:nil
             identifier:@"fabric_or_quilt" handler:^(UIAction *action) {
                 [self actionCreateFabricProfile];
             }],
         [UIAction
-            actionWithTitle:@"Forge" image:nil
+            actionWithTitle:localize(@"profile.create.forge", nil) image:nil
             identifier:@"forge" handler:^(UIAction *action) {
                 [self actionCreateForgeProfile];
             }],
         [UIAction
-            actionWithTitle:@"Modpack" image:nil
+            actionWithTitle:localize(@"profile.create.modpack", nil) image:nil
             identifier:@"modpack" handler:^(UIAction *action) {
                 [self actionCreateModpackProfile];
             }]

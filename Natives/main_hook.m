@@ -6,8 +6,10 @@
 #import "mach_excServer.h"
 
 #include <dlfcn.h>
+#include <execinfo.h>
 #include <libgen.h>
 #include <pthread.h>
+#include <unistd.h>
 #include "external/fishhook/fishhook.h"
 
 mach_port_t excPort;
@@ -54,6 +56,16 @@ void hooked___assert_rtn(const char* func, const char* file, int line, const cha
 
 void hooked_exit(int code) {
     NSLog(@"exit(%d) called", code);
+    // Dump a small backtrace so we can see who called exit() (JVM, SDL, ...).
+    void *frames[64];
+    int frameCount = backtrace(frames, 64);
+    char **symbols = backtrace_symbols(frames, frameCount);
+    if (symbols) {
+        for (int i = 0; i < frameCount; i++) {
+            NSLog(@"[MC26/exit] %s", symbols[i]);
+        }
+        free(symbols);
+    }
     if (code == 0) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [UIApplication.sharedApplication performSelector:@selector(suspend)];
@@ -180,6 +192,11 @@ int hooked_open(const char *path, int oflag, ...) {
 }
 
 void init_hookFunctions() {
+    // Make sure native stderr (SDL, MoltenVK, JVM) is captured by the log view:
+    // route fd 2 to the already-redirected stdout and disable buffering.
+    setvbuf(stdout, NULL, _IONBF, 0);
+    dup2(STDOUT_FILENO, STDERR_FILENO);
+
     struct rebinding rebindings[] = (struct rebinding[]){
         {"abort", hooked_abort, (void *)&orig_abort},
         {"__assert_rtn", hooked___assert_rtn, NULL},

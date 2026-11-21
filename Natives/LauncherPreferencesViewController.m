@@ -400,6 +400,11 @@
                 @"hasDetail": @YES,
                 @"icon": @"textformat.abc.dottedunderline",
                 @"type": self.typeSwitch
+            },
+            @{@"key": @"allow_unsupported_versions",
+                @"hasDetail": @YES,
+                @"icon": @"exclamationmark.triangle",
+                @"type": self.typeSwitch
             }
         ]
     ];

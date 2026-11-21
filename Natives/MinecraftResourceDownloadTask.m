@@ -118,6 +118,18 @@
             }
         }
         [MinecraftResourceUtils tweakVersionJson:self.metadata];
+
+        NSLog(@"[MCDL] Version %@ requires LWJGL %@", self.metadata[@"id"],
+            [MinecraftResourceUtils requiredLWJGLVersionForVersionJSON:self.metadata] ?: @"(none)");
+
+        // Check runtime compatibility before downloading libraries and assets, so
+        // users do not waste a full download on a version this build cannot run.
+        NSString *unsupportedReason = [MinecraftResourceUtils unsupportedReasonForVersionJSON:self.metadata];
+        if (unsupportedReason != nil) {
+            [self finishDownloadWithErrorString:unsupportedReason];
+            return;
+        }
+
         success();
     };
 
@@ -313,16 +325,11 @@
 }
 
 // Check if the account has permission to download
+// Amethyst local build: local (offline) accounts are allowed to download and
+// install Minecraft. Demo accounts keep their normal behaviour.
 - (BOOL)checkAccessWithDialog:(BOOL)show {
-    // for now
-    BOOL accessible = [BaseAuthenticator.current.authData[@"username"] hasPrefix:@"Demo."] || BaseAuthenticator.current.authData[@"xboxGamertag"] != nil;
-    if (!accessible) {
-        [self.progress cancel];
-        if (show) {
-            [self finishDownloadWithErrorString:@"Minecraft can't be legally installed when logged in with a local account. Please switch to an online account to continue."];
-        }
-    }
-    return accessible;
+    (void)show;
+    return YES;
 }
 
 // Check SHA of the file

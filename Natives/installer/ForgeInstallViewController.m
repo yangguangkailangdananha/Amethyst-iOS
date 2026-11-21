@@ -185,7 +185,7 @@
     self.searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
     self.searchController.searchResultsUpdater = (id<UISearchResultsUpdating>)self;
     self.searchController.obscuresBackgroundDuringPresentation = NO;
-    self.searchController.searchBar.placeholder = @"Search versions";
+    self.searchController.searchBar.placeholder = localize(@"launcher.forge.search_placeholder", nil);
     self.navigationItem.searchController = self.searchController;
     self.navigationItem.hidesSearchBarWhenScrolling = NO;
     self.definesPresentationContext = YES;
@@ -237,7 +237,8 @@
     }
     
     [self.afManager invalidateSessionCancelingTasks:YES resetSession:NO];
-    showDialog(@"Download Cancelled", @"The download has been cancelled.");
+    showDialog(localize(@"launcher.forge.download_cancelled.title", nil),
+               localize(@"launcher.forge.download_cancelled.message", nil));
 }
 
 - (void)resetCellAppearance:(NSIndexPath *)indexPath {
@@ -831,8 +832,8 @@
                 return;
             }
             
-            showDialog(@"Download Complete", 
-                      [NSString stringWithFormat:@"%@ installer will now run. After installation completes, you will need to restart the app.", self.currentVendor]);
+            showDialog(localize(@"launcher.forge.download_complete.title", nil),
+                      [NSString stringWithFormat:localize(@"launcher.forge.download_complete.message", nil), self.currentVendor]);
             
             LauncherNavigationController *navVC = (id)((UISplitViewController *)self.presentingViewController).viewControllers[1];
             
@@ -1088,7 +1089,7 @@
         self.isDataLoading = NO;
         
         [self.refreshControl endRefreshing];
-        showDialog(@"Error Loading Versions", parseError.localizedDescription);
+        showDialog(localize(@"launcher.forge.error_loading.title", nil), parseError.localizedDescription);
         [self switchToReadyState];
     });
 }

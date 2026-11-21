@@ -4,6 +4,10 @@ project(AngelAuraAmethyst)
 configure_file(${CMAKE_CURRENT_LIST_DIR}/config.h.in ${CMAKE_CURRENT_LIST_DIR}/config.h)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -target arm64-apple-ios -mcpu=apple-a8 -fcommon -fobjc-arc -ObjC -F'${CMAKE_OSX_SYSROOT}/System/Cryptexes/OS/System/Library/Frameworks'")
+# Xcode 16+ promotes several legacy C diagnostics to errors (implicit function
+# declarations, int/pointer conversions, implicit int, ...). Keep them as
+# warnings so the older code base still compiles with a modern toolchain.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-error=implicit-function-declaration -Wno-implicit-function-declaration -Wno-error=implicit-int -Wno-error=int-conversion -Wno-error=incompatible-pointer-types -Wno-error=incompatible-function-pointer-types -Wno-error=return-type")
 set(CMAKE_C_FLAGS_DEBUG "-funwind-tables -g")
 
 if("${CMAKE_HOST_SYSTEM_NAME}" MATCHES "Linux|^GNU$|Android")
@@ -50,6 +54,9 @@ target_link_libraries(awt_xawt
 set(CMAKE_FRAMEWORK_PATH "${CMAKE_CURRENT_LIST_DIR}/resources/Frameworks")
 
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rpath @executable_path/Frameworks -rpath @loader_path/Frameworks")
+# Export Amethyst_GetHost so libSDL3's custom video driver can resolve it with
+# dlsym(RTLD_DEFAULT, ...) for Minecraft 26.x.
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-export_dynamic")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -rpath @executable_path/Frameworks -rpath @loader_path/Frameworks")
 
 # ANGLE wrapper for 1.17+
@@ -132,6 +139,14 @@ add_executable(AngelAuraAmethyst
   installer/modpack/CurseForgeAPI.m
   installer/modpack/ModrinthAPI.m
 
+  mods/ModManager.m
+  mods/ModSiteAPI.m
+  mods/ModBrowserViewController.m
+  mods/ModsViewController.m
+
+  mc26/AmethystSDLHost.m
+  mc26/AmethystSDLInput.m
+
   input/ControllerInput.m
   input/GyroInput.m
   input/KeyboardInput.m
@@ -155,6 +170,7 @@ add_executable(AngelAuraAmethyst
   LauncherProfileEditorViewController.m
   LauncherProfilesViewController.m
   LauncherSplitViewController.m
+  LauncherUpdateViewController.m
   MinecraftOptionUtils.m
   MinecraftResourceDownloadTask.m
   MinecraftResourceUtils.m

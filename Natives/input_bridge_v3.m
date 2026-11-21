@@ -22,6 +22,7 @@
 #include "glfw_keycodes.h"
 #include "ios_uikit_bridge.h"
 #include "utils.h"
+#include "mc26/AmethystSDLInput.h"
 
 #include "JavaLauncher.h"
 
@@ -435,6 +436,8 @@ void CallbackBridge_nativeSetInputReady(BOOL inputReady) {
 }
 
 BOOL CallbackBridge_nativeSendChar(jchar codepoint /* jint codepoint */) {
+    // Minecraft 26.x receives input through SDL3 instead of GLFW.
+    AmethystSDL_SendChar((unsigned int)codepoint);
     if (GLFW_invoke_Char && isInputReady) {
         if (isUseStackQueueCall) {
             sendData(EVENT_TYPE_CHAR, codepoint, 0, 0, 0);
@@ -466,8 +469,6 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSendCursorEnter(
 }
 */
 void CallbackBridge_nativeSendCursorPos(char event, CGFloat x, CGFloat y) {
-    if (!GLFW_invoke_CursorPos || !isInputReady) return;
-
     switch (event) {
         case ACTION_DOWN:
         case ACTION_UP:
@@ -493,6 +494,10 @@ void CallbackBridge_nativeSendCursorPos(char event, CGFloat x, CGFloat y) {
             break;
     }
 
+    // Feed the position into SDL3 for Minecraft 26.x (no GLFW callbacks there).
+    AmethystSDL_SendCursorPos((float) cursorX, (float) cursorY, 0);
+
+    if (!GLFW_invoke_CursorPos || !isInputReady) return;
     if (!isUseStackQueueCall) {
         GLFW_invoke_CursorPos((void*) showingWindow, (double) cursorX, (double) cursorY);
     }
@@ -529,6 +534,9 @@ char getKeyModifiers(int key, int action) {
 }
 
 void CallbackBridge_nativeSendKey(int key, int scancode, int action, int mods) {
+    // Minecraft 26.x receives keyboard input through SDL3.
+    if (getenv("AME_MC26")) NSLog(@"[MC26/input] key=%d action=%d", key, action);
+    AmethystSDL_SendKey(key, action, mods);
     if (GLFW_invoke_Key && isInputReady) {
         keyDownBuffer[MAX(0, key-31)]=(jbyte)action;
         if (mods == 0) {
@@ -551,6 +559,10 @@ void CallbackBridge_nativeSendKey(int key, int scancode, int action, int mods) {
 }
 
 void CallbackBridge_nativeSendMouseButton(int button, int action, int mods) {
+    if (getenv("AME_MC26")) NSLog(@"[MC26/input] mouse button=%d action=%d", button, action);
+    if (button >= 0) {
+        AmethystSDL_SendMouseButton(button, action);
+    }
     if (isInputReady) {
         if (button == -1) {
         } else if (GLFW_invoke_MouseButton) {
@@ -570,6 +582,7 @@ void CallbackBridge_nativeSendMouseButton(int button, int action, int mods) {
 void CallbackBridge_nativeSendScreenSize(int width, int height) {
     windowWidth = width;
     windowHeight = height;
+    AmethystSDL_SendScreenSize(width, height);
     
     if (isInputReady) {
         if (GLFW_invoke_FramebufferSize) {
@@ -592,6 +605,7 @@ void CallbackBridge_nativeSendScreenSize(int width, int height) {
 }
 
 void CallbackBridge_nativeSendScroll(CGFloat xoffset, CGFloat yoffset) {
+    AmethystSDL_SendScroll((float) xoffset, (float) yoffset);
     if (GLFW_invoke_Scroll && isInputReady) {
         if (isUseStackQueueCall) {
             sendDataFloat(EVENT_TYPE_SCROLL, xoffset, yoffset, 0, 0);

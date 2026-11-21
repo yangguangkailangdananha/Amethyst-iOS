@@ -56,8 +56,15 @@
                 }.mutableCopy,
                 @"8": @"internal",
                 @"17": @"internal",
-                @"21": @"internal"
+                @"21": @"internal",
+                // Bundled since the Java 25 runtime was added; Minecraft 26.x and
+                // newer snapshots require it (javaVersion.majorVersion = 25).
+                @"25": @"internal"
             }.mutableCopy,
+            // Forge 1.20.5+ and Minecraft 1.21.9+ mods commonly need newer JNA than
+            // the patched 5.13.0 build shipped in Frameworks. Keep the bundled one
+            // so the patched native library stays in sync unless opted out.
+            @"allow_newer_jna": @NO,
             @"java_args": @"",
             @"env_variables": @"",
             @"auto_ram": @(!getEntitlementValue(@"com.apple.private.memorystatus")),
@@ -66,6 +73,11 @@
         @"internal": @{
             @"isolated": @NO,
             @"latest_version": [NSDictionary new]
+        }.mutableCopy,
+        @"mods": @{
+            // Optional: CurseForge requires a personal API key, Modrinth does not.
+            @"curseforge_api_key": @"",
+            @"strict_match": @YES
         }.mutableCopy
     }.mutableCopy;
 
@@ -86,7 +98,10 @@
             @"debug_ipad_ui": @(realUIIdiom == UIUserInterfaceIdiomPad),
             @"debug_auto_correction": @YES,
             @"debug_show_layout_bounds": @NO,
-            @"debug_show_layout_overlap": @NO
+            @"debug_show_layout_overlap": @NO,
+            // Allow launching versions that need LWJGL 3.4+/SDL3, which this build
+            // cannot run. Only useful together with a custom runtime build.
+            @"allow_unsupported_versions": @NO
         }.mutableCopy;
         defaults[@"warnings"] = @{
             @"local_warn": @YES,
@@ -180,6 +195,32 @@
             pref[section][key] = value;
         }
     }
+
+    // Runtimes bundled by a newer build must be selectable for preferences that
+    // were created before them, otherwise Minecraft 26.x keeps falling back to
+    // the default Java 17 runtime and refuses to start.
+    if (global && [pref[@"java"] isKindOfClass:NSDictionary.class]) {
+        NSMutableDictionary *javaSection = [pref[@"java"] mutableCopy];
+        NSMutableDictionary *javaHomes = [javaSection[@"java_homes"] mutableCopy];
+        if (![javaHomes isKindOfClass:NSMutableDictionary.class]) {
+            javaHomes = [NSMutableDictionary new];
+        }
+        BOOL changed = NO;
+        for (NSString *version in @[@"21", @"25"]) {
+            NSString *runtimePath = [NSString stringWithFormat:@"%@/java_runtimes/java-%@-openjdk",
+                NSBundle.mainBundle.bundlePath, version];
+            if (!javaHomes[version] && [NSFileManager.defaultManager fileExistsAtPath:runtimePath]) {
+                NSLog(@"[PLPreferences] Registering bundled Java %@ runtime", version);
+                javaHomes[version] = @"internal";
+                changed = YES;
+            }
+        }
+        if (changed) {
+            javaSection[@"java_homes"] = javaHomes;
+            pref[@"java"] = javaSection;
+        }
+    }
+
     return pref;
 }
 

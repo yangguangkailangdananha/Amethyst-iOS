@@ -8,6 +8,8 @@
 #import "LauncherPreferences.h"
 #import "LauncherPreferencesViewController.h"
 #import "LauncherProfilesViewController.h"
+#import "LauncherUpdateViewController.h"
+#import "mods/ModsViewController.h"
 #import "PLProfiles.h"
 #import "UIButton+AFNetworking.h"
 #import "UIImageView+AFNetworking.h"
@@ -63,7 +65,14 @@
         [LauncherMenuCustomItem vcClass:LauncherNewsViewController.class],
         [LauncherMenuCustomItem vcClass:LauncherProfilesViewController.class],
         [LauncherMenuCustomItem vcClass:LauncherPreferencesViewController.class],
+        [LauncherMenuCustomItem vcClass:LauncherUpdateViewController.class],
     ].mutableCopy;
+    [self.options addObject:
+     (id)[LauncherMenuCustomItem
+          title:localize(@"launcher.menu.mods", nil)
+          imageName:@"puzzlepiece.extension" action:^{
+        [contentNavigationController pushViewController:[ModsViewController new] animated:YES];
+    }]];
     if (realUIIdiom != UIUserInterfaceIdiomTV) {
         [self.options addObject:(id)[LauncherMenuCustomItem
                                      title:localize(@"launcher.menu.custom_controls", nil)
